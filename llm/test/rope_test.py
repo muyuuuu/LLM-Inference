@@ -1,6 +1,9 @@
 import torch
-import math
-from typing import Any, Optional
+import unittest
+
+from llm.ops import _Rope
+
+from typing import Optional
 from torch import nn
 
 
@@ -116,68 +119,20 @@ class RotaryPositionalEmbeddings(nn.Module):
         return x_out.type_as(x)
 
 
-class _Rope:
-    def __init__(self, dim, max_seq_len, base=10000, device="cpu"):
+class TestRope(unittest.TestCase):
+    def test_my_rope(self):
+        batch = 7
+        seq_len = 512
+        num_head = 8
+        head_dim = 8
 
-        assert dim % 2 == 0, "dim % 2 !=0"
+        random_x = torch.randn((batch, seq_len, num_head, head_dim), device="cuda")
 
-        self._dim = dim
-        self._max_seq_len = max_seq_len
-        self._base = base
-        self._device = device
+        my_rope = _Rope(head_dim, seq_len, 10000, "cuda")
+        ref_rope = RotaryPositionalEmbeddings(head_dim, seq_len, 10000).cuda()
 
-        theta = [1.0 / math.pow(base, i / dim) for i in range(0, dim, 2)]
+        res = my_rope(random_x)
+        ref = ref_rope(random_x)
 
-        self._theta = torch.tensor(theta).reshape(1, -1)
-        self._idx = torch.arange(max_seq_len, dtype=self._theta.dtype).reshape(-1, 1)
-
-        # in position m, rotate 2i and 2i + 1
-        self._cos_value = torch.cos(torch.matmul(self._idx, self._theta)).to(device)
-        self._sin_value = torch.sin(torch.matmul(self._idx, self._theta)).to(device)
-
-    def __call__(self, x, input_ids=None):
-        assert (
-            x.dim() == 4
-        ), "input dimention should be [batch, seq_len, num_head, head_dim]"
-
-        seq_len = x.size(1)
-        _cos = self._cos_value[:seq_len,]
-
-        _sin = self._sin_value[:seq_len,]
-        if input_ids is not None:
-            _cos = self._cos_value[input_ids]
-            _sin = self._sin_value[input_ids]
-
-        # x_shaped: [batch, seq_len, num_head, head_dim / 2, 2]
-        x_shaped = x.reshape(*x.shape[:-1], -1, 2)
-
-        # sin and cos: [1, seq_len, 1, head_dim / 2]
-        _cos = _cos.reshape(1, seq_len, 1, -1)
-        _sin = _sin.reshape(1, seq_len, 1, -1)
-
-        # out_1 and out_2: [B, seq_len, 1, head_dim / 2, 1]
-        out_1 = x_shaped[..., 0] * _cos - x_shaped[..., 1] * _sin
-        out_2 = x_shaped[..., 0] * _sin + x_shaped[..., 1] * _cos
-
-        res = torch.stack([out_1, out_2], dim=-1)
-        res = res.reshape(*res.shape[:-2], -1)
-
-        return res
-
-
-if __name__ == "__main__":
-    batch = 7
-    seq_len = 512
-    num_head = 8
-    head_dim = 8
-
-    random_x = torch.randn((batch, seq_len, num_head, head_dim), device="cuda")
-
-    my_rope = _Rope(head_dim, seq_len, 10000, "cuda")
-    ref_rope = RotaryPositionalEmbeddings(head_dim, seq_len, 10000).cuda()
-
-    res = my_rope(random_x)
-    ref = ref_rope(random_x)
-
-    assert torch.allclose(res, ref, atol=1e-3), "_Rope impl wrong"
-    print("_Rope impl success")
+        self.assertTrue(torch.allclose(res, ref, atol=1e-3))
+        print("_Rope impl success")

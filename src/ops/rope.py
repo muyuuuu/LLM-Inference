@@ -1,0 +1,183 @@
+import torch
+import math
+from typing import Any, Optional
+from torch import nn
+
+
+class RotaryPositionalEmbeddings(nn.Module):
+    """
+    This class implements Rotary Positional Embeddings (RoPE)
+    proposed in https://arxiv.org/abs/2104.09864.
+
+    Reference implementation (used for correctness verfication)
+    can be found here:
+    https://github.com/meta-llama/llama/blob/689c7f261b9c5514636ecc3c5fefefcbb3e6eed7/llama/model.py#L132
+
+    In this implementation we cache the embeddings for each position upto
+    ``max_seq_len`` by computing this during init.
+
+    Args:
+        dim (int): Embedding dimension. This is usually set to the dim of each
+            head in the attention module computed as ``embed_dim // num_heads``
+        max_seq_len (int): Maximum expected sequence length for the
+            model, if exceeded the cached freqs will be recomputed
+        base (int): The base for the geometric progression used to compute
+            the rotation angles
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        max_seq_len: int = 4096,
+        base: int = 10_000,
+    ) -> None:
+        super().__init__()
+        self.dim = dim
+        self.base = base
+        self.max_seq_len = max_seq_len
+        self.rope_init()
+
+    def rope_init(self):
+        theta = 1.0 / (
+            self.base
+            ** (torch.arange(0, self.dim, 2)[: (self.dim // 2)].float() / self.dim)
+        )
+        self.register_buffer("theta", theta, persistent=False)
+        self.build_rope_cache(self.max_seq_len)
+
+    def build_rope_cache(self, max_seq_len: int = 4096) -> None:
+        # Create position indexes `[0, 1, ..., max_seq_len - 1]`
+        seq_idx = torch.arange(
+            max_seq_len, dtype=self.theta.dtype, device=self.theta.device
+        )
+
+        # Outer product of theta and position index; output tensor has
+        # a shape of [max_seq_len, dim // 2]
+        idx_theta = torch.einsum("i, j -> ij", seq_idx, self.theta).float()
+
+        # cache includes both the cos and sin components and so the output shape is
+        # [max_seq_len, dim // 2, 2]
+        cache = torch.stack([torch.cos(idx_theta), torch.sin(idx_theta)], dim=-1)
+        self.register_buffer("cache", cache, persistent=False)
+
+    def forward(
+        self, x: torch.Tensor, *, input_pos: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """
+        Args:
+            x (torch.Tensor): input tensor with shape
+                ``[b, s, n_h, h_d]``
+            input_pos (Optional[torch.Tensor]): Optional tensor which contains the position ids
+                of each token. During training, this is used to indicate the positions
+                of each token relative to its sample when packed, shape [b, s].
+                During inference, this indicates the position of the current token.
+                If none, assume the index of the token is its position id. Default is None.
+
+        Returns:
+            torch.Tensor: output tensor with shape ``[b, s, n_h, h_d]``
+
+        Notation used for tensor shapes:
+            - b: batch size
+            - s: sequence length
+            - n_h: num heads
+            - h_d: head dim
+        """
+        # input tensor has shape [b, s, n_h, h_d]
+        seq_len = x.size(1)
+
+        # extract the values based on whether input_pos is set or not
+        rope_cache = (
+            self.cache[:seq_len] if input_pos is None else self.cache[input_pos]
+        )
+
+        # reshape input; the last dimension is used for computing the output.
+        # Cast to float to match the reference implementation
+        # tensor has shape [b, s, n_h, h_d // 2, 2]
+        xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+
+        # reshape the cache for broadcasting
+        # tensor has shape [b, s, 1, h_d // 2, 2] if packed samples,
+        # otherwise has shape [1, s, 1, h_d // 2, 2]
+        rope_cache = rope_cache.view(-1, xshaped.size(1), 1, xshaped.size(3), 2)
+
+        # tensor has shape [b, s, n_h, h_d // 2, 2]
+        x_out = torch.stack(
+            [
+                xshaped[..., 0] * rope_cache[..., 0]
+                - xshaped[..., 1] * rope_cache[..., 1],
+                xshaped[..., 1] * rope_cache[..., 0]
+                + xshaped[..., 0] * rope_cache[..., 1],
+            ],
+            -1,
+        )
+
+        # tensor has shape [b, s, n_h, h_d]
+        x_out = x_out.flatten(3)
+        return x_out.type_as(x)
+
+
+class _Rope:
+    def __init__(self, dim, max_seq_len, base=10000, device="cpu"):
+
+        assert dim % 2 == 0, "dim % 2 !=0"
+
+        self._dim = dim
+        self._max_seq_len = max_seq_len
+        self._base = base
+        self._device = device
+
+        theta = [1.0 / math.pow(base, i / dim) for i in range(0, dim, 2)]
+
+        self._theta = torch.tensor(theta).reshape(1, -1)
+        self._idx = torch.arange(max_seq_len, dtype=self._theta.dtype).reshape(-1, 1)
+
+        # in position m, rotate 2i and 2i + 1
+        self._cos_value = torch.cos(torch.matmul(self._idx, self._theta)).to(device)
+        self._sin_value = torch.sin(torch.matmul(self._idx, self._theta)).to(device)
+
+    def __call__(self, x, input_ids=None):
+        assert (
+            x.dim() == 4
+        ), "input dimention should be [batch, seq_len, num_head, head_dim]"
+
+        seq_len = x.size(1)
+        _cos = self._cos_value[:seq_len,]
+
+        _sin = self._sin_value[:seq_len,]
+        if input_ids is not None:
+            _cos = self._cos_value[input_ids]
+            _sin = self._sin_value[input_ids]
+
+        # x_shaped: [batch, seq_len, num_head, head_dim / 2, 2]
+        x_shaped = x.reshape(*x.shape[:-1], -1, 2)
+
+        # sin and cos: [1, seq_len, 1, head_dim / 2]
+        _cos = _cos.reshape(1, seq_len, 1, -1)
+        _sin = _sin.reshape(1, seq_len, 1, -1)
+
+        # out_1 and out_2: [B, seq_len, 1, head_dim / 2, 1]
+        out_1 = x_shaped[..., 0] * _cos - x_shaped[..., 1] * _sin
+        out_2 = x_shaped[..., 0] * _sin + x_shaped[..., 1] * _cos
+
+        res = torch.stack([out_1, out_2], dim=-1)
+        res = res.reshape(*res.shape[:-2], -1)
+
+        return res
+
+
+if __name__ == "__main__":
+    batch = 7
+    seq_len = 512
+    num_head = 8
+    head_dim = 8
+
+    random_x = torch.randn((batch, seq_len, num_head, head_dim), device="cuda")
+
+    my_rope = _Rope(head_dim, seq_len, 10000, "cuda")
+    ref_rope = RotaryPositionalEmbeddings(head_dim, seq_len, 10000).cuda()
+
+    res = my_rope(random_x)
+    ref = ref_rope(random_x)
+
+    assert torch.allclose(res, ref, atol=1e-3), "_Rope impl wrong"
+    print("_Rope impl success")

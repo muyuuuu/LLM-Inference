@@ -3,7 +3,7 @@ import math
 
 
 class _Rope:
-    def __init__(self, dim, max_seq_len, base=10000, device="cpu"):
+    def __init__(self, dim, max_seq_len, base=10000, traditional=True, device="cpu"):
 
         assert dim % 2 == 0, "dim % 2 !=0"
 
@@ -21,6 +21,8 @@ class _Rope:
         self._cos_value = torch.cos(torch.matmul(self._idx, self._theta)).to(device)
         self._sin_value = torch.sin(torch.matmul(self._idx, self._theta)).to(device)
 
+        self._traditional = traditional
+
     def __call__(self, x, input_ids=None):
         assert (
             x.dim() == 4
@@ -34,16 +36,23 @@ class _Rope:
             _cos = self._cos_value[input_ids]
             _sin = self._sin_value[input_ids]
 
-        # x_shaped: [batch, seq_len, num_head, head_dim / 2, 2]
-        x_shaped = x.reshape(*x.shape[:-1], -1, 2)
-
         # sin and cos: [1, seq_len, 1, head_dim / 2]
         _cos = _cos.reshape(1, seq_len, 1, -1)
         _sin = _sin.reshape(1, seq_len, 1, -1)
 
+        if self._traditional:
+            # x_shaped: [batch, seq_len, num_head, head_dim / 2, 2]
+            x_shaped = x.reshape(*x.shape[:-1], -1, 2)
+
+            x1 = x_shaped[..., 0]
+            x2 = x_shaped[..., 1]
+        else:
+            x1 = x[..., 0 : self._dim / 2]
+            x2 = x[..., self._dim / 2 :]
+
         # out_1 and out_2: [B, seq_len, num_head, head_dim / 2]
-        out_1 = x_shaped[..., 0] * _cos - x_shaped[..., 1] * _sin
-        out_2 = x_shaped[..., 0] * _sin + x_shaped[..., 1] * _cos
+        out_1 = x1 * _cos - x2 * _sin
+        out_2 = x1 * _sin + x2 * _cos
 
         res = torch.stack([out_1, out_2], dim=-1)
         res = res.reshape(*res.shape[:-2], -1)

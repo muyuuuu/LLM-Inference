@@ -135,4 +135,7 @@ class TestRope(unittest.TestCase):
         ref = ref_rope(random_x)
 
         self.assertTrue(torch.allclose(res, ref, atol=1e-3))
+
+        my_rope = _Rope(head_dim, seq_len, 10000, device="cuda", traditional=False)
+        res = my_rope(random_x)
         print("_Rope impl success")

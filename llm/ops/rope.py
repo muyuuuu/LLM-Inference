@@ -47,8 +47,8 @@ class _Rope:
             x1 = x_shaped[..., 0]
             x2 = x_shaped[..., 1]
         else:
-            x1 = x[..., 0 : self._dim / 2]
-            x2 = x[..., self._dim / 2 :]
+            x1 = x[..., 0 : self._dim // 2]
+            x2 = x[..., self._dim // 2 :]
 
         # out_1 and out_2: [B, seq_len, num_head, head_dim / 2]
         out_1 = x1 * _cos - x2 * _sin

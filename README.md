@@ -2,10 +2,9 @@
 
 ## pre-requirements
 
-1. cuda，pytorch
+- Nvidia 显卡，安装cuda 环境和 pytorch
 
-## 算子实现
-
+## QWen2 实现
 
 | 任务                                          | 测试命令                                                            |
 | --------------------------------------------- | ------------------------------------------------------------------- |
@@ -13,6 +12,7 @@
 | ✅ Task 2: 实现 `MultiHeadAttention`           | `python -m unittest llm.test.attention_test.TestMultiHeadAttention` |
 | ✅ Task 3: 实现 `RoPE` 旋转位置编码            | `python -m unittest llm.test.rope_test`                             |
 | ✅ Task 4: 实现 `RMSNorm` 标准化               | `python -m unittest llm.test.norm_test`                             |
+| ✅ Task 5: 实现千问的 `MLP`                    | `python -m unittest llm.test.mlp_test`                              |
 
 
 
@@ -21,5 +21,6 @@
 - [tiny-llm](https://github.com/skyzh/tiny-llm)
 - [torch MultiHeadAttention 转置](https://github.com/pytorch/pytorch/blob/main/torch/nn/functional.py#L5945)
 - [torch 实现 RoPE](https://github.com/meta-pytorch/torchtune/blob/main/torchtune/modules/position_embeddings.py)
-- [RoPE 公式推导](https://www.bilibili.com/video/BV1CQoaY2EU2/?spm_id_from=333.337.search-card.all.click&vd_source=08fc039ce87a61f2dd6954658b5ae2b5)
+- [RoPE 公式推导](https://spaces.ac.cn/archives/8265/comment-page-1)
 - [torch 实现 RMSNorm](https://docs.pytorch.org/docs/stable/generated/torch.nn.RMSNorm.html)
+- [Qwen 实现 MLP](https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/modeling_qwen2.py)

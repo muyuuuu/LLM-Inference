@@ -14,6 +14,7 @@
 | ✅ Task 4: 实现 `RMSNorm` 标准化                        | `python -m unittest llm.test.norm_test`                             |
 | ✅ Task 5: 实现千问的 `MLP`                             | `python -m unittest llm.test.mlp_test`                              |
 | ✅ Task 6: `scaled_dot_product_attention` 添加 GQA 支持 | `python -m unittest llm.test.attention_test.TestScaleDotAttention`  |
+| ✅ Task 7: 实现 `tied embedding`                        | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`   |
 
 ## Qwen2 优化
 
@@ -34,3 +35,4 @@
 - [torch 实现 RMSNorm](https://docs.pytorch.org/docs/stable/generated/torch.nn.RMSNorm.html)
 - [Qwen 实现 MLP](https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen2/modeling_qwen2.py)
 - [GQA 概念](https://machinelearningmastery.com/a-gentle-introduction-to-multi-head-attention-and-grouped-query-attention/)
+- [Tie Embedding](https://www.spaces.ac.cn/archives/9698)

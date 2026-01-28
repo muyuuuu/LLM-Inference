@@ -3,6 +3,7 @@ from .attention import _SimpleMultiHeadAttention
 from .rope import _Rope
 from .norm import _RMSNorm
 from .mlp import _MLP
+from .embedding import _TiedEmbedding
 
 __all__ = [
     "_scaled_dot_product_attention",
@@ -10,4 +11,5 @@ __all__ = [
     "_Rope",
     "_RMSNorm",
     "_MLP",
+    "_TiedEmbedding",
 ]

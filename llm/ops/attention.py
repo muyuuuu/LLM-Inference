@@ -4,48 +4,53 @@ import torch.nn.functional as F
 
 
 def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=False):
-    assert query.shape == key.shape == value.shape, "QKV's shape is not equal"
+    assert query.size(0) == key.size(0) == value.size(0), "QKV's shape is not equal"
 
     batch_size = query.size(0)
-    length = 0
-    hidden_dim = 0
-    num_heads = 1
 
     if query.dim() == 3:
-        length = query.size(1)
-        hidden_dim = query.size(2)
-
         query = query.unsqueeze(1)
         key = key.unsqueeze(1)
         value = value.unsqueeze(1)
 
-    elif query.dim() == 4:
-        num_heads = query.size(1)
-        length = query.size(2)
-        hidden_dim = query.size(3)
-    else:
-        raise RuntimeError(f"not support for dim {query.dim()}")
+    assert (
+        query.dim() == key.dim() == value.dim() == 4
+    ), "_scaled_dot_product_attention only support for 4D tensor"
 
-    assert batch_size > 0, "bad batch size"
-    assert length > 0, "bad length"
-    assert hidden_dim > 0, "bad hidden_dim"
-    assert num_heads > 0, "bad num heads"
+    assert query.size(3) == key.size(3) == value.size(3), "QKV must has same dimension"
+
+    q_batch, q_num_head, q_length, q_dim = query.size()
+    k_batch, k_num_head, k_length, k_dim = key.size()
+    v_batch, v_num_head, v_length, v_dim = value.size()
+
+    assert q_dim == k_dim == v_dim, "QKV dim not equal"
+    assert q_num_head % k_num_head == 0, "query head num mod kv head num != 0"
+    heads_per_group = q_num_head // k_num_head
+
+    if heads_per_group > 1:
+        key = key.repeat_interleave(heads_per_group, dim=1)
+        value = value.repeat_interleave(heads_per_group, dim=1)
+
+    # q size is [B, q_num_head, q_length, dim]
+    # kv size is [B, q_num_head, kv_length, dim]
 
     device = query.device
-    factor = 1 / math.sqrt(hidden_dim)
+    factor = 1 / math.sqrt(q_dim)
 
+    # [..., q_length, kv_length]
     attn = torch.matmul(query, torch.transpose(key, 2, 3))
     attn *= factor
 
     if is_causal:
         assert mask is None
-        causal_mask = torch.triu(
-            torch.ones(length, length, dtype=torch.bool, device=device), diagonal=1
+        i = torch.arange(q_length).view(-1, 1)
+        j = torch.arange(k_length).view(1, -1)
+        mask = torch.where(
+            j > i,
+            torch.tensor(float("-inf")),
+            torch.tensor(0.0),
         )
-        mask_values = torch.zeros(length, length, device=device).masked_fill(
-            causal_mask, float("-inf")
-        )
-        attn += mask_values
+        attn += mask.to(device)
     else:
         if mask is not None:
             if mask.dtype == torch.bool:

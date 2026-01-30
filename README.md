@@ -2,21 +2,22 @@
 
 ## pre-requirements
 
-- Nvidia 显卡，安装cuda 环境和 pytorch
+- 需要 Nvidia 显卡，安装 cuda 环境，以及 pytorch。为测试代码准性，需要安装 torchao 和 torchtune
 
 ## QWen2 实现
 
-| 任务                                                   | 测试命令                                                            |
-| ------------------------------------------------------ | ------------------------------------------------------------------- |
-| ✅ Task 1: 实现 `scaled_dot_product_attention`          | `python -m unittest llm.test.attention_test.TestScaleDotAttention`  |
-| ✅ Task 2: 实现 `MultiHeadAttention`                    | `python -m unittest llm.test.attention_test.TestMultiHeadAttention` |
-| ✅ Task 3: 实现 `RoPE` 旋转位置编码                     | `python -m unittest llm.test.rope_test`                             |
-| ✅ Task 4: 实现 `RMSNorm` 标准化                        | `python -m unittest llm.test.norm_test`                             |
-| ✅ Task 5: 实现千问的 `MLP`                             | `python -m unittest llm.test.mlp_test`                              |
-| ✅ Task 6: `scaled_dot_product_attention` 添加 GQA 支持 | `python -m unittest llm.test.attention_test.TestScaleDotAttention`  |
-| ✅ Task 7: 实现 `tied embedding`                        | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`   |
+| 任务                                                     | 测试命令                                                                    |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| ✅ Task 1: 实现 `scaled_dot_product_attention`            | `python -m unittest llm.test.attention_test.TestScaleDotAttention`          |
+| ✅ Task 2: 实现 `MultiHeadAttention`                      | `python -m unittest llm.test.attention_test.TestMultiHeadAttention`         |
+| ✅ Task 3: 实现 `RoPE` 旋转位置编码                       | `python -m unittest llm.test.rope_test`                                     |
+| ✅ Task 4: 实现 `RMSNorm` 标准化                          | `python -m unittest llm.test.norm_test`                                     |
+| ✅ Task 5: 实现千问的 `MLP`                               | `python -m unittest llm.test.mlp_test`                                      |
+| ✅ Task 6.1: `scaled_dot_product_attention` 添加 GQA 支持 | `python -m unittest llm.test.attention_test.TestScaleDotAttention`          |
+| ✅ Task 6.2: `MultiHeadAttention` 添加 GQA 支持           | `python -m unittest llm.test.attention_test.TestGroupedMultiHeadAttention ` |
+| ✅ Task 7: 实现 `tied embedding`                          | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`           |
 
-## Qwen2 优化
+## 工程优化
 
 - key-value cache
 - flash attention

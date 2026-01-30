@@ -61,7 +61,6 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=False)
 
     attn = F.softmax(attn, dim=-1)
     attn = torch.matmul(attn, value)
-
     return attn
 
 
@@ -116,6 +115,73 @@ class _SimpleMultiHeadAttention:
             _scaled_dot_product_attention(_q, _k, _v, mask=mask, is_causal=is_causal)
             .transpose(1, 2)
             .reshape(batch, length, self._head_dim)
+        )
+
+        return F.linear(out, self.o_weight)
+
+
+class _GroupedMultiHeadAttention:
+    def __init__(
+        self,
+        q_num_head,
+        kv_num_head,
+        dim,
+        q_weight,
+        k_weight,
+        v_weight,
+        o_weight,
+    ):
+
+        assert q_num_head % kv_num_head == 0, "q_num_head % kv_num_head != 0"
+        assert q_num_head >= kv_num_head, "q_num_head < kv_num_head"
+
+        self._dim = dim
+        self._q_num_head = q_num_head
+        self._kv_num_head = kv_num_head
+
+        self.q_weight = q_weight
+        self.k_weight = k_weight
+        self.v_weight = v_weight
+        self.o_weight = o_weight
+
+    def __call__(
+        self,
+        query,
+        key,
+        value,
+        mask=None,
+        is_causal=False,
+    ):
+
+        assert (
+            query.size() == key.size() == value.size()
+        ), "now only support for self-attention"
+        batch_size = query.size(0)
+
+        q_length = query.size(1)
+        k_length = key.size(1)
+        v_length = value.size(1)
+
+        _q = (
+            F.linear(query, self.q_weight)
+            .view(batch_size, q_length, self._q_num_head, self._dim)
+            .transpose(1, 2)
+        )
+        _k = (
+            F.linear(key, self.k_weight)
+            .view(batch_size, k_length, self._kv_num_head, self._dim)
+            .transpose(1, 2)
+        )
+        _v = (
+            F.linear(value, self.v_weight)
+            .view(batch_size, v_length, self._kv_num_head, self._dim)
+            .transpose(1, 2)
+        )
+
+        out = (
+            _scaled_dot_product_attention(_q, _k, _v, mask=mask, is_causal=is_causal)
+            .transpose(1, 2)
+            .reshape(batch_size, q_length, self._dim * self._q_num_head)
         )
 
         return F.linear(out, self.o_weight)

@@ -16,6 +16,7 @@
 | ✅ Task 6.1: `scaled_dot_product_attention` 添加 GQA 支持 | `python -m unittest llm.test.attention_test.TestScaleDotAttention`          |
 | ✅ Task 6.2: `MultiHeadAttention` 添加 GQA 支持           | `python -m unittest llm.test.attention_test.TestGroupedMultiHeadAttention ` |
 | ✅ Task 7: 实现 `tied embedding`                          | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`           |
+| ✅ Task 8: 实现 `Qwen2 TransformerBlock`                  | 暂时没想到测试方法                                                          |
 
 ## 工程优化
 

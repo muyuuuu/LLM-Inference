@@ -23,7 +23,7 @@ class _Rope:
 
         self._traditional = traditional
 
-    def __call__(self, x, input_ids=None):
+    def __call__(self, x, offset=None):
         assert (
             x.dim() == 4
         ), "input dimention should be [batch, seq_len, num_head, head_dim]"
@@ -32,9 +32,9 @@ class _Rope:
         _cos = self._cos_value[:seq_len,]
 
         _sin = self._sin_value[:seq_len,]
-        if input_ids is not None:
-            _cos = self._cos_value[input_ids]
-            _sin = self._sin_value[input_ids]
+        if offset is not None:
+            _cos = self._cos_value[offset]
+            _sin = self._sin_value[offset]
 
         # sin and cos: [1, seq_len, 1, head_dim / 2]
         _cos = _cos.reshape(1, seq_len, 1, -1)

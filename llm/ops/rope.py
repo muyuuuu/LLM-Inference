@@ -3,7 +3,7 @@ import math
 
 
 class _Rope:
-    def __init__(self, dim, max_seq_len, base=10000, traditional=True, device="cpu"):
+    def __init__(self, dim, max_seq_len, base=10000, traditional=False, device="cpu"):
 
         assert dim % 2 == 0, "dim % 2 !=0"
 
@@ -28,6 +28,7 @@ class _Rope:
             x.dim() == 4
         ), "input dimention should be [batch, seq_len, num_head, head_dim]"
 
+        origin_dtype = x.dtype
         seq_len = x.size(1)
         _cos = self._cos_value[:seq_len,]
 
@@ -55,6 +56,42 @@ class _Rope:
         out_2 = x1 * _sin + x2 * _cos
 
         res = torch.stack([out_1, out_2], dim=-1)
-        res = res.reshape(*res.shape[:-2], -1)
+        res = res.reshape(*res.shape[:-2], -1).to(origin_dtype)
 
         return res
+
+
+# def apply_rotary_emb(
+#     x: torch.Tensor,
+#     cos: torch.Tensor,
+#     sin: torch.Tensor,
+# ) -> torch.Tensor:
+#     x1, x2 = torch.chunk(x.float(), 2, dim=-1)
+#     y1 = x1 * cos - x2 * sin
+#     y2 = x2 * cos + x1 * sin
+#     return torch.cat((y1, y2), dim=-1).to(x.dtype)
+
+
+# class _Rope:
+#     def __init__(self, dim, max_seq_len, base=10000, traditional=False, device="cuda"):
+#         self.head_size = dim
+#         rotary_dim = dim
+#         inv_freq = 1.0 / (
+#             base ** (torch.arange(0, rotary_dim, 2, dtype=torch.float) / rotary_dim)
+#         )
+#         t = torch.arange(max_seq_len, dtype=torch.float)
+#         freqs = torch.einsum("i,j -> ij", t, inv_freq)
+#         cos = freqs.cos()
+#         sin = freqs.sin()
+#         cache = torch.cat((cos, sin), dim=-1).unsqueeze_(1)
+#         self.cos_sin_cache = cache.cuda()
+
+#     def __call__(
+#         self,
+#         x: torch.Tensor,
+#         offset: torch.Tensor,
+#     ):
+#         cos_sin = self.cos_sin_cache[offset]
+#         cos, sin = cos_sin.chunk(2, dim=-1)
+#         x = apply_rotary_emb(x, cos, sin)
+#         return x

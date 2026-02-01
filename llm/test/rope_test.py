@@ -128,7 +128,7 @@ class TestRope(unittest.TestCase):
 
         random_x = torch.randn((batch, seq_len, num_head, head_dim), device="cuda")
 
-        my_rope = _Rope(head_dim, seq_len, 10000, device="cuda")
+        my_rope = _Rope(head_dim, seq_len, 10000, device="cuda", traditional=True)
         ref_rope = RotaryPositionalEmbeddings(head_dim, seq_len, 10000).cuda()
 
         res = my_rope(random_x)

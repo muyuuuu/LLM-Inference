@@ -47,9 +47,9 @@ class MLPTestCase(unittest.TestCase):
         ref = ref_mlp(random_in)
 
         my_mlp = _MLP(
-            gate=gate_proj.transpose(0, 1),
-            up=up_proj.transpose(0, 1),
-            down=down_proj.transpose(0, 1),
+            gate=gate_proj,
+            up=up_proj,
+            down=down_proj,
         )
         res = my_mlp(random_in)
 

@@ -3,9 +3,10 @@ import torch
 import torch.nn.functional as F
 
 
-def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=False):
+def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
     assert query.size(0) == key.size(0) == value.size(0), "QKV's shape is not equal"
 
+    origin_dtype = query.dtype
     batch_size = query.size(0)
 
     if query.dim() == 3:
@@ -49,12 +50,14 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=False)
             j > i,
             torch.tensor(float("-inf")),
             torch.tensor(0.0),
-        )
+        ).to(origin_dtype)
         attn += mask.to(device)
     else:
         if mask is not None:
             if mask.dtype == torch.bool:
-                mask_values = torch.where(mask_values, float("-inf"), 0.0)
+                mask_values = torch.where(mask_values, float("-inf"), 0.0).to(
+                    origin_dtype
+                )
                 attn += mask_values
             else:
                 attn += mask
@@ -88,7 +91,7 @@ class _SimpleMultiHeadAttention:
         key,
         value,
         mask=None,
-        is_causal=False,
+        is_causal=True,
     ):
         assert query.shape == key.shape == value.shape
 
@@ -150,7 +153,7 @@ class _GroupedMultiHeadAttention:
         key,
         value,
         mask=None,
-        is_causal=False,
+        is_causal=True,
     ):
 
         assert (

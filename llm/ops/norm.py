@@ -9,8 +9,8 @@ class _RMSNorm:
 
     def __call__(self, x):
         ori_type = x.dtype
-        x = x.to(torch.float32)
 
+        y = x.to(torch.float32)
         y = x / torch.sqrt(torch.mean(x**2, -1, keepdim=True) + self._eps)
         y = self._weight * y
         y = y.to(ori_type)

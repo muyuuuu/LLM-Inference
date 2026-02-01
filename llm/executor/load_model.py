@@ -36,12 +36,12 @@ class Qwen3Loader:
     def _convert_qwen3_model(self, qwen3_config):
         my_model = Qwen3Model(config=qwen3_config)
         my_model.from_pretrained(self.model)
+        del self.model
         return my_model
 
     def convert_official_model(self):
         qwen3_config = self._convert_qwen3_config()
         qwen3_model = self._convert_qwen3_model(qwen3_config)
-        del self.model
         print("Convert QWen3 Model Success")
         return qwen3_model, qwen3_config, self.tokenizer
 
@@ -52,7 +52,7 @@ class Qwen3Loader:
             trust_remote_code=True,
         )
         print("Qwen3 Model Load Success")
-        return official_model
+        return official_model.cuda()
 
     def load_tokenizer(self, model_name):
         tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)

@@ -1,5 +1,7 @@
 # 大模型推理
 
+由于好奇大模型推理的实现细节，在 [tiny-llm](https://skyzh.github.io/tiny-llm/week1-07-sampling-prepare.html) 的基础上做了些改动，遂有了本仓库。实现主要技术，精力有限，所以不会做极致的性能优化。
+
 ## pre-requirements
 
 - 需要 Nvidia 显卡，安装 cuda 环境，以及 pytorch
@@ -21,8 +23,19 @@
 | ✅ Task 8: 实现 `Qwen3 TransformerBlock`                  | 暂时没想到测试方法                                                          |
 | ✅ Task 9: 加载 Qwen3 模型，简单推理                      | `python -m llm.executor.run_model` 执行推理                                 |
 
+```
+Qwen3 Config Load Success
+Qwen3 Tokenizer Load Success
+Loading checkpoint shards: 100%|███████████████████████████████████████████████████████████| 3/3 [00:00<00:00, 46.81it/s]
+Qwen3 Model Load Success
+Convert QWen3 Model Success
+>>> In: what's deepseek, answer shortly.
+>>> Out:  DeepSeek is a large language model developed by DeepSeek, a company established in 2023. The model is trained on a large amount
+```
+
 ## 工程优化
 
+- sampling
 - key-value cache
 - flash attention
 - continuous batching

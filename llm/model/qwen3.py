@@ -84,7 +84,7 @@ class Qwen3MultiHeadAttention:
         )
 
         _q = self.q_norm(_q)
-        _k = self.q_norm(_k)
+        _k = self.k_norm(_k)
 
         _q = self.rope_layer(_q, offset=offset)
         _k = self.rope_layer(_k, offset=offset)
@@ -165,7 +165,6 @@ class Qwen3Model:
         self.load_pretrained = True
 
         state = model.state_dict()
-        state = {key: val.cuda() for key, val in state.items()}
 
         self.emb_tokens = _TiedEmbedding(
             self.config.vocab_size,
@@ -174,32 +173,19 @@ class Qwen3Model:
         )
 
         self.layers = []
-        q_proj_str = "model.layers.-1.self_attn.q_proj.weight"
-        k_proj_str = "model.layers.-1.self_attn.k_proj.weight"
-        v_proj_str = "model.layers.-1.self_attn.v_proj.weight"
-        o_proj_str = "model.layers.-1.self_attn.o_proj.weight"
-
-        q_norm_str = "model.layers.-1.self_attn.q_norm.weight"
-        k_norm_str = "model.layers.-1.self_attn.k_norm.weight"
-
-        gate_str = "model.layers.-1.mlp.gate_proj.weight"
-        up_str = "model.layers.-1.mlp.up_proj.weight"
-        down_str = "model.layers.-1.mlp.down_proj.weight"
-        norm_1_str = "model.layers.-1.input_layernorm.weight"
-        norm_2_str = "model.layers.-1.post_attention_layernorm.weight"
 
         for i in range(self.config.num_layers):
-            q_proj_str = q_proj_str.replace("-1", str(i))
-            k_proj_str = k_proj_str.replace("-1", str(i))
-            v_proj_str = v_proj_str.replace("-1", str(i))
-            o_proj_str = o_proj_str.replace("-1", str(i))
-            q_norm_str = q_norm_str.replace("-1", str(i))
-            k_norm_str = k_norm_str.replace("-1", str(i))
-            gate_str = gate_str.replace("-1", str(i))
-            up_str = up_str.replace("-1", str(i))
-            down_str = down_str.replace("-1", str(i))
-            norm_1_str = norm_1_str.replace("-1", str(i))
-            norm_2_str = norm_2_str.replace("-1", str(i))
+            q_proj_str = f"model.layers.{str(i)}.self_attn.q_proj.weight"
+            k_proj_str = f"model.layers.{str(i)}.self_attn.k_proj.weight"
+            v_proj_str = f"model.layers.{str(i)}.self_attn.v_proj.weight"
+            o_proj_str = f"model.layers.{str(i)}.self_attn.o_proj.weight"
+            q_norm_str = f"model.layers.{str(i)}.self_attn.q_norm.weight"
+            k_norm_str = f"model.layers.{str(i)}.self_attn.k_norm.weight"
+            gate_str = f"model.layers.{str(i)}.mlp.gate_proj.weight"
+            up_str = f"model.layers.{str(i)}.mlp.up_proj.weight"
+            down_str = f"model.layers.{str(i)}.mlp.down_proj.weight"
+            norm_1_str = f"model.layers.{str(i)}.input_layernorm.weight"
+            norm_2_str = f"model.layers.{str(i)}.post_attention_layernorm.weight"
 
             self.layers.append(
                 Qwen2TransformBlock(

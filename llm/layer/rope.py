@@ -14,12 +14,18 @@ class _Rope:
 
         theta = [1.0 / math.pow(base, i / dim) for i in range(0, dim, 2)]
 
-        self._theta = torch.tensor(theta).reshape(1, -1)
-        self._idx = torch.arange(max_seq_len, dtype=self._theta.dtype).reshape(-1, 1)
+        self._theta = (
+            torch.tensor(theta, dtype=torch.bfloat16).reshape(1, -1).to(device)
+        )
+        self._idx = (
+            torch.arange(max_seq_len, dtype=self._theta.dtype).reshape(-1, 1).to(device)
+        )
 
         # in position m, rotate 2i and 2i + 1
-        self._cos_value = torch.cos(torch.matmul(self._idx, self._theta)).to(device)
-        self._sin_value = torch.sin(torch.matmul(self._idx, self._theta)).to(device)
+        tmp = torch.matmul(self._idx, self._theta)
+        self._sin_value = torch.sin(tmp)
+        self._cos_value = torch.cos(tmp)
+        del tmp
 
         self._traditional = traditional
 

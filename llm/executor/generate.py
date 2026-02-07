@@ -1,4 +1,5 @@
 import torch
+from .kv_cache import EasyKVCache
 
 
 def apply_repetition_penalty(logits, input_ids, penalty=1.2):
@@ -10,6 +11,57 @@ def apply_repetition_penalty(logits, input_ids, penalty=1.2):
             else:
                 logits[i, token_id] *= penalty
     return logits
+
+
+def generate_kv_cache_base(
+    model,
+    tokenizer,
+    input_ids,
+    temperature: float = 1.0,
+    device: str = "cuda",
+    filter=lambda x: x,
+):
+    all_input_ids = input_ids.clone()
+    layers = model.config.num_layers
+
+    kv_cache = [EasyKVCache() for _ in range(layers)]
+    current_len = all_input_ids.shape[1]
+    seq_len = current_len
+    offset = torch.arange(0, current_len, dtype=torch.long, device=device).unsqueeze(0)
+
+    # prefill
+    with torch.no_grad():
+        logits = model(inputs=all_input_ids, offset=offset, cache=kv_cache)
+
+    # decode
+    while 1:
+        next_token_logits = logits[:, -1, :] / temperature
+        next_token_logits = filter(next_token_logits)
+        apply_repetition_penalty(next_token_logits, all_input_ids)
+        next_token_probs = torch.softmax(next_token_logits, dim=-1)
+        next_token = torch.multinomial(next_token_probs, num_samples=1)
+
+        all_input_ids = torch.cat([all_input_ids, next_token], dim=1)
+        if next_token.item() == tokenizer.eos_token_id:
+            break
+
+        offset = torch.tensor([[current_len]], device=device)  # shape: [1, 1]
+        current_len += 1
+
+        with torch.no_grad():
+            logits = model(
+                inputs=next_token,
+                offset=offset,
+                cache=kv_cache,
+                is_causal=False,
+                mask=None,
+            )
+
+    input_tokens = all_input_ids[0, :seq_len]
+    output_tokens = all_input_ids[0, seq_len:]
+
+    print(">>> In:", tokenizer.decode(input_tokens, skip_special_tokens=True))
+    print(">>> Out:", tokenizer.decode(output_tokens, skip_special_tokens=True))
 
 
 def generate_no_cache_base(

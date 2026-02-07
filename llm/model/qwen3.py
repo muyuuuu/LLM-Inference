@@ -2,7 +2,13 @@ import torch.nn.functional as F
 
 from dataclasses import dataclass
 
-from llm.ops import _MLP, _RMSNorm, _Rope, _scaled_dot_product_attention, _TiedEmbedding
+from llm.layer import (
+    _MLP,
+    _RMSNorm,
+    _Rope,
+    _scaled_dot_product_attention,
+    _TiedEmbedding,
+)
 
 
 @dataclass
@@ -71,7 +77,7 @@ class Qwen3MultiHeadAttention:
             device="cuda",
         )
 
-    def __call__(self, x, offset=None, is_causal=True, mask=None):
+    def __call__(self, x, offset=None, is_causal=True, mask=None, cache=None):
         batch_size, seq_len, _ = x.size()
         _q = F.linear(x, self.q_weight, self.q_bias).reshape(
             batch_size, seq_len, self.q_num_head, self.head_dim
@@ -92,6 +98,10 @@ class Qwen3MultiHeadAttention:
         _q = _q.transpose(1, 2)
         _k = _k.transpose(1, 2)
         _v = _v.transpose(1, 2)
+
+        if cache is not None:
+            cache.save_kv_to_cache(_k, _v)
+            _k, _v = cache.get_cached_kv()
 
         y = (
             _scaled_dot_product_attention(_q, _k, _v, is_causal=is_causal, mask=mask)
@@ -149,8 +159,14 @@ class Qwen2TransformBlock:
         self.rms_norm1 = _RMSNorm(w_rms_norm1, eps=rms_norm_eps, device="cuda")
         self.rms_norm2 = _RMSNorm(w_rms_norm2, eps=rms_norm_eps, device="cuda")
 
-    def __call__(self, x, offset=None, is_causal=True, mask=None):
-        y = self.attn(self.rms_norm1(x), offset=offset, is_causal=is_causal, mask=mask)
+    def __call__(self, x, offset=None, is_causal=True, mask=None, cache=None):
+        y = self.attn(
+            self.rms_norm1(x),
+            offset=offset,
+            is_causal=is_causal,
+            mask=mask,
+            cache=cache,
+        )
         r1 = x + y
         r2 = self.mlp(self.rms_norm2(r1))
         return r1 + r2
@@ -215,11 +231,18 @@ class Qwen3Model:
         self.last_norm = _RMSNorm(state["model.norm.weight"], eps=self.config.rms_eps)
         self.w_last_head = state["lm_head.weight"]
 
-    def __call__(self, inputs, offset=None, is_causal=True, mask=None):
+    def __call__(self, inputs, offset=None, is_causal=True, mask=None, cache=None):
         assert self.load_pretrained == True, "please load model first"
 
         y = self.emb_tokens(inputs)
-        for layer in self.layers:
-            y = layer(x=y, offset=offset, is_causal=is_causal, mask=mask)
+        if cache is not None:
+            for idx, layer in enumerate(self.layers):
+                y = layer(
+                    x=y, offset=offset, is_causal=is_causal, mask=mask, cache=cache[idx]
+                )
+        else:
+            for layer in self.layers:
+                y = layer(x=y, offset=offset, is_causal=is_causal, mask=mask)
+
         y = self.last_norm(y)
         return F.linear(y, self.w_last_head)

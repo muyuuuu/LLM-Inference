@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import unittest
 
 from copy import deepcopy
-from llm.ops import _TiedEmbedding
+from llm.layer import _TiedEmbedding
 
 
 class TestTieEmbedding(unittest.TestCase):

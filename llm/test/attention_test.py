@@ -4,8 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import unittest
 
-from llm.ops import _scaled_dot_product_attention
-from llm.ops import _SimpleMultiHeadAttention, _GroupedMultiHeadAttention
+from llm.layer import _scaled_dot_product_attention
+from llm.layer import _SimpleMultiHeadAttention, _GroupedMultiHeadAttention
 
 
 class TestScaleDotAttention(unittest.TestCase):

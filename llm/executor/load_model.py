@@ -11,8 +11,10 @@ from llm.model import Qwen3Config, Qwen3Model
 
 
 class Qwen3Loader:
-    def __init__(self, model_name="Qwen/Qwen3-4B"):
-        assert model_name == "Qwen/Qwen3-4B", "only support Qwen/Qwen3-4B now"
+    def __init__(self, model_name="Qwen/Qwen3-4B-Instruct-2507"):
+        assert (
+            model_name == "Qwen/Qwen3-4B-Instruct-2507"
+        ), "only support Qwen/Qwen3-4B-Instruct-2507 now"
         self.model_name = model_name
 
         self.config = self.load_config(model_name)

@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from copy import deepcopy
 from dataclasses import dataclass
-from llm.ops import _MLP
+from llm.layer import _MLP
 
 
 @dataclass

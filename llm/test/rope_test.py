@@ -1,7 +1,7 @@
 import torch
 import unittest
 
-from llm.ops import _Rope
+from llm.layer import _Rope
 
 from typing import Optional
 from torch import nn

@@ -3,7 +3,7 @@ import torch.nn as nn
 import unittest
 
 from copy import deepcopy
-from llm.ops import _RMSNorm
+from llm.layer import _RMSNorm
 
 
 class TestRMSNorm(unittest.TestCase):

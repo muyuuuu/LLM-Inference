@@ -2,6 +2,10 @@
 
 由于好奇大模型推理的原理，学习了 [tiny-llm](https://skyzh.github.io/tiny-llm/week1-07-sampling-prepare.html) 课程并将苹果芯片相关代码适配 Nvidia 芯片，遂有了本仓库。侧重 GPU 优化技术，完成 Qwen3-4B-Instruct-2507 模型的本地部署和推理加速。显存不够可以考虑 Qwen3-0.5B，主要是学技术。
 
+<p align="center">
+    <img src="./assert/demo.png" width="600">
+</p>
+
 ## pre-requirements
 
 - 需要 Nvidia 显卡，安装 cuda 环境，以及 pytorch
@@ -33,9 +37,6 @@ triton                    3.2.0
 | ✅ Task 8: 实现 `Qwen3 TransformerBlock`                  | 暂时没想到测试方法                                                          |
 | ✅ Task 9: 加载 Qwen3-4B-Instruct-2507 模型，简单推理     | `python -m llm.executor.run_model` 执行推理                                 |
 
-<p align="center">
-    <img src="./assert/demo.png" width="800">
-</p>
 
 ## 工程优化
 
@@ -55,7 +56,7 @@ triton                    3.2.0
 
 # 结语
 
-大模型从对话到最终落地还有很多[优化技术](https://www.bilibili.com/video/BV1Bm6bB5EJ3/?spm_id_from=333.337.search-card.all.click&vd_source=08fc039ce87a61f2dd6954658b5ae2b5)，但优化技术更侧重大模型的服务和 Agent，更像大模型时代后端工程师的工作内容
+大模型从对话到最终落地还有很多[优化技术](https://www.bilibili.com/video/BV1Bm6bB5EJ3/?spm_id_from=333.337.search-card.all.click&vd_source=08fc039ce87a61f2dd6954658b5ae2b5)，但这些优化技术更侧重大模型的服务和 Agent，更像大模型时代后端工程师的工作内容
 
 - Speculative Decoding：用一个小而快的草稿模型提前预测多个 token，再用大模型并行验证这些预测。
 - Memory：长期记忆和短期记忆的管理工具。

@@ -1,6 +1,6 @@
 # 大模型推理
 
-由于好奇大模型推理的原理，学习了 [tiny-llm](https://skyzh.github.io/tiny-llm/week1-07-sampling-prepare.html) 课程并将苹果芯片相关代码适配 Nvidia 芯片，遂有了本仓库。侧重 GPU 优化技术，完成 Qwen3-4B-Instruct-2507 模型的本地部署和推理加速。显存不够可以考虑 Qwen3-0.5B，主要是学技术。
+由于好奇大模型推理的原理，学习了 [tiny-llm](https://skyzh.github.io/tiny-llm/week1-07-sampling-prepare.html) 课程并将苹果芯片相关代码适配 Nvidia 4070 芯片，遂有了本仓库。侧重 GPU 优化技术，完成 Qwen3-4B-Instruct-2507 模型的本地部署和推理加速。显存不够可以考虑 Qwen3-0.5B，主要是学技术。
 
 <p align="center">
     <img src="./assert/demo.png" width="600">
@@ -40,13 +40,13 @@ triton                    3.2.0
 
 ## 工程优化
 
-| 优化                                           | 测试命令                                      |
-| ---------------------------------------------- | --------------------------------------------- |
-| ✅ Task 1.1: 解决重复生成问题，实现 `TopK` 采样 | `python -m llm.executor.run_model --topk 100` |
-| ✅ Task 1.2: 解决重复生成问题，实现 `TopN` 采样 | `python -m llm.executor.run_model --topp 0.7` |
-| ✅ Task 2: 实现 PD 分离与 KV Cache              | `python -m llm.executor.run_model --kv_cache` |
+| 优化                                  | 测试命令                                        |
+| ------------------------------------- | ----------------------------------------------- |
+| ✅ Task 1.1: 实现 `TopK` 采样          | `python -m llm.executor.run_model --topk 100`   |
+| ✅ Task 1.2: 实现 `TopN` 采样          | `python -m llm.executor.run_model --topp 0.7`   |
+| ✅ Task 2: 实现 PD 分离与 KV Cache     | `python -m llm.executor.run_model --kv_cache 1` |
+| ✅ Task 3: triton 实现 flashattention1 | `python -m llm.executor.run_model --flash 1`    |
 
-- page attention
 - flash attention
 - continuous batching
 
@@ -64,7 +64,7 @@ triton                    3.2.0
 - MCP(Model Context Protocol)：大模型与外部数据源和工具之间的通信协议。
 - Skills：有了 MCP 就可以调用多个工具，skills 定义了多个工具该如何搭配使用，是 Agent 的操作指南。
 
-RAG 涉及数据库和向量检索，Memory 的历史记忆涉及摘要生成，也许会用其他技术来记录用户的操作习惯。however，这些东西每家公司的实现方式都不同，没有什么统一的标准答案，和 GPU 优化关系不大。由于本人的工作和大模型服务/Agent相差甚远，所以对大模型推理框架的探索到此结束，后面会去看多卡训练相关的项目。
+RAG 涉及数据库和向量检索，Memory 的历史记忆涉及摘要生成，也许会用其他技术来记录用户的操作习惯。however，这些东西每家公司的实现方式都不同，没有什么统一的标准答案。由于本人的工作和大模型服务/Agent相差甚远且精力有限，所以对大模型推理框架的探索到此结束~后面会去看**多卡**相关的项目。
 
 # 参考
 
@@ -79,3 +79,4 @@ RAG 涉及数据库和向量检索，Memory 的历史记忆涉及摘要生成，
 - [vllm 中 Qwen3 实现](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/qwen3.py)
 - [大模型推理为什么需要采样、惩罚](https://zhuanlan.zhihu.com/p/1981752176578667658)
 - [看图学 KV Cache](https://zhuanlan.zhihu.com/p/662498827)
+- [triton 入门](https://zhuanlan.zhihu.com/p/684473453)

@@ -40,11 +40,12 @@ triton                    3.2.0
 
 ## 工程优化
 
-| 优化                                           | 测试命令                                      |
-| ---------------------------------------------- | --------------------------------------------- |
-| ✅ Task 1.1: 解决重复生成问题，实现 `TopK` 采样 | `python -m llm.executor.run_model --topk 100` |
-| ✅ Task 1.2: 解决重复生成问题，实现 `TopN` 采样 | `python -m llm.executor.run_model --topp 0.7` |
-| ✅ Task 2: 实现 PD 分离与 KV Cache              | `python -m llm.executor.run_model --kv_cache` |
+| 优化                                                          | 测试命令                                      |
+| ------------------------------------------------------------- | --------------------------------------------- |
+| ✅ Task 1.1: 解决重复生成问题，实现 `TopK` 采样                | `python -m llm.executor.run_model --topk 100` |
+| ✅ Task 1.2: 解决重复生成问题，实现 `TopN` 采样                | `python -m llm.executor.run_model --topp 0.7` |
+| ✅ Task 2: 实现 PD 分离与 KV Cache                             | `python -m llm.executor.run_model --kv_cache` |
+| ✅ Task 3: 学习 CUDA 或 triton(建议)，实现 FlashAttention 算子 | `python -m llm.executor.run_model --kv_cache` |
 
 - page attention
 - flash attention
@@ -79,3 +80,5 @@ RAG 涉及数据库和向量检索，Memory 的历史记忆涉及摘要生成，
 - [vllm 中 Qwen3 实现](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/qwen3.py)
 - [大模型推理为什么需要采样、惩罚](https://zhuanlan.zhihu.com/p/1981752176578667658)
 - [看图学 KV Cache](https://zhuanlan.zhihu.com/p/662498827)
+- [triton 入门](https://zhuanlan.zhihu.com/p/684473453)
+- [FlashAttention](https://courses.cs.washington.edu/courses/cse599m/23sp/notes/flashattn.pdf)

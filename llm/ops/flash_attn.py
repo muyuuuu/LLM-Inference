@@ -22,165 +22,298 @@ def flash_attention_kernel(
     stride_o_s: tl.int64,
     stride_o_h: tl.int64,
     seq_len: tl.int64,
+    batch_size: tl.int64,
     head_num: tl.int64,
-    head_dim: tl.int64,
+    head_dim: tl.constexpr,
     scale: tl.float32,
-    BLOCK_M: tl.constexpr,
-    BLOCK_N: tl.constexpr,
-    BLOCK_D: tl.constexpr,
-    IS_CAUSAL: tl.constexpr,
 ):
     """
-    Flash Attention kernel. Q, K, V layout: (batch, seq_len, head_num, head_dim).
-    Each program handles one (batch, head) and one block of Q rows (BLOCK_M).
+    flash attention forward kernel
     """
-    pid = tl.program_id(0)
-    num_blocks_m = tl.cdiv(seq_len, BLOCK_M)
-    batch_head_idx = pid // num_blocks_m
-    block_m_idx = pid % num_blocks_m
-    batch_idx = batch_head_idx // head_num
-    head_idx = batch_head_idx % head_num
+    pid_x = tl.program_id(0)
 
-    offs_m = block_m_idx * BLOCK_M + tl.arange(0, BLOCK_M)
-    offs_d = tl.arange(0, BLOCK_D)
+    batch_idx = pid_x // head_num
+    head_idx = pid_x % head_num
 
-    q_ptrs = (
-        q_ptr
-        + batch_idx * stride_q_b
-        + offs_m[:, None] * stride_q_s
-        + head_idx * stride_q_h
-        + offs_d[None, :]
-    )
-    q = tl.load(q_ptrs, mask=offs_m[:, None] < seq_len, other=0.0)
+    total_size = seq_len * head_dim * batch_size * head_num
 
-    m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
-    l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
-    acc = tl.zeros([BLOCK_M, BLOCK_D], dtype=tl.float32)
-
-    block_n_end = (
-        seq_len if not IS_CAUSAL else tl.minimum((block_m_idx + 1) * BLOCK_M, seq_len)
-    )
-    for start_n in range(0, block_n_end, BLOCK_N):
-        start_n = tl.multiple_of(start_n, BLOCK_N)
-        offs_n = start_n + tl.arange(0, BLOCK_N)
-
-        k_ptrs = (
-            k_ptr
-            + batch_idx * stride_k_b
-            + offs_n[:, None] * stride_k_s
-            + head_idx * stride_k_h
-            + offs_d[None, :]
+    for i in range(0, seq_len):
+        q_off = (
+            batch_idx * stride_q_b
+            + head_idx * stride_q_h
+            + i * stride_q_s
+            + tl.arange(0, head_dim)
         )
-        v_ptrs = (
-            v_ptr
-            + batch_idx * stride_v_b
-            + offs_n[:, None] * stride_v_s
-            + head_idx * stride_v_h
-            + offs_d[None, :]
-        )
-        k = tl.load(k_ptrs, mask=offs_n[:, None] < seq_len, other=0.0)
-        v = tl.load(v_ptrs, mask=offs_n[:, None] < seq_len, other=0.0)
-
-        qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
-        qk += tl.dot(q, tl.trans(k))
-        qk *= scale
-
-        if IS_CAUSAL:
-            causal_mask = offs_m[:, None] >= offs_n[None, :]
-            qk = tl.where(causal_mask, qk, float("-inf"))
-
-        qk = tl.where(
-            (offs_m[:, None] < seq_len) & (offs_n[None, :] < seq_len),
-            qk,
-            float("-inf"),
+        q_block = tl.load(
+            q_ptr + q_off,
+            mask=q_off < total_size,
+            other=0.0,
         )
 
-        m_ij = tl.maximum(m_i, tl.max(qk, 1))
-        p = tl.exp(qk - m_ij[:, None])
-        p = tl.where(
-            (offs_m[:, None] < seq_len) & (offs_n[None, :] < seq_len),
-            p,
-            0.0,
+        m = -float("inf")
+        d = 0.0
+        o = tl.zeros((head_dim,), dtype=tl.float32)
+        for j in range(0, seq_len):
+            k_off = (
+                batch_idx * stride_k_b
+                + head_idx * stride_k_h
+                + j * stride_k_s
+                + tl.arange(0, head_dim)
+            )
+            k_block = tl.load(
+                k_ptr + k_off,
+                mask=k_off < total_size,
+                other=0.0,
+            )
+            v_off = (
+                batch_idx * stride_v_b
+                + head_idx * stride_v_h
+                + j * stride_v_s
+                + tl.arange(0, head_dim)
+            )
+            v_block = tl.load(
+                v_ptr + v_off,
+                mask=v_off < total_size,
+                other=0.0,
+            )
+
+            tmp = tl.sum(q_block * k_block) * scale
+            m_pre = m
+            m = max(m, tmp)
+            d_pre = d
+            d = d_pre * tl.exp(m_pre - m) + tl.exp(tmp - m)
+            o = o * (d_pre * tl.exp(m_pre - m)) / d + v_block * tl.exp(tmp - m) / d
+
+        o_off = (
+            batch_idx * stride_o_b
+            + head_idx * stride_o_h
+            + i * stride_o_s
+            + tl.arange(0, head_dim)
+        )
+        tl.store(
+            out_ptr + o_off,
+            o,
+            mask=o_off < total_size,
         )
 
-        alpha = tl.exp(m_i - m_ij)
-        l_i = l_i * alpha + tl.sum(p, 1)
-        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
-        m_i = m_ij
 
-    acc = acc / l_i[:, None]
+def flash_attention_forward_triton(q, k, v, is_causal=False):
+    assert q.dim() == k.dim() == v.dim(), "bad dim"
+    assert q.size() == k.size() == v.size(), "bad size"
 
-    out_ptrs = (
-        out_ptr
-        + batch_idx * stride_o_b
-        + offs_m[:, None] * stride_o_s
-        + head_idx * stride_o_h
-        + offs_d[None, :]
-    )
-    tl.store(out_ptrs, acc, mask=offs_m[:, None] < seq_len)
-
-
-def flash_attention_forward(q, k, v, causal=False, BLOCK_M=64, BLOCK_N=64):
-    """
-    Flash Attention forward. Q, K, V: (batch, seq_len, head_num, head_dim).
-    """
-    batch_size, seq_len, head_num, head_dim = q.shape
-    assert head_dim <= 128 and head_dim % 8 == 0
-    scale = head_dim ** (-0.5)
-
+    batch_size = q.size(0)
+    head_num = q.size(1)
+    seq_len = q.size(2)
+    head_dim = q.size(3)
     out = torch.zeros_like(q)
 
-    BLOCK_D = head_dim
-    grid = (batch_size * head_num * triton.cdiv(seq_len, BLOCK_M),)
-
-    flash_attention_kernel[grid](
+    flash_attention_kernel[(batch_size * head_num,)](
         q,
         k,
         v,
         out,
-        stride_q_b=seq_len * head_num * head_dim,
-        stride_q_s=head_num * head_dim,
-        stride_q_h=head_dim,
-        stride_k_b=seq_len * head_num * head_dim,
-        stride_k_s=head_num * head_dim,
-        stride_k_h=head_dim,
-        stride_v_b=seq_len * head_num * head_dim,
-        stride_v_s=head_num * head_dim,
-        stride_v_h=head_dim,
-        stride_o_b=seq_len * head_num * head_dim,
-        stride_o_s=head_num * head_dim,
-        stride_o_h=head_dim,
-        seq_len=seq_len,
-        head_num=head_num,
-        head_dim=head_dim,
-        scale=scale,
-        BLOCK_M=BLOCK_M,
-        BLOCK_N=BLOCK_N,
-        BLOCK_D=BLOCK_D,
-        IS_CAUSAL=causal,
+        q.stride(0),
+        q.stride(2),
+        q.stride(1),
+        k.stride(0),
+        k.stride(2),
+        k.stride(1),
+        v.stride(0),
+        v.stride(2),
+        v.stride(1),
+        out.stride(0),
+        out.stride(2),
+        out.stride(1),
+        seq_len,
+        batch_size,
+        head_num,
+        head_dim,
+        1.0 / head_dim**0.5,
     )
     return out
 
 
-def flash_attention():
-    batch_size = 1
-    seq_len = 128
-    head_num = 1
-    head_dim = 64
-    q = torch.randn(
-        batch_size, seq_len, head_num, head_dim, device="cuda", dtype=torch.float16
+@triton.jit
+def flash_attention_kernel_tile(
+    q_ptr,
+    k_ptr,
+    v_ptr,
+    out_ptr,
+    stride_q_b: tl.int64,
+    stride_q_s: tl.int64,
+    stride_q_h: tl.int64,
+    stride_k_b: tl.int64,
+    stride_k_s: tl.int64,
+    stride_k_h: tl.int64,
+    stride_v_b: tl.int64,
+    stride_v_s: tl.int64,
+    stride_v_h: tl.int64,
+    stride_o_b: tl.int64,
+    stride_o_s: tl.int64,
+    stride_o_h: tl.int64,
+    seq_len: tl.int64,
+    batch_size: tl.int64,
+    head_num: tl.int64,
+    head_dim: tl.constexpr,
+    scale: tl.float32,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    """
+    flash attention forward kernel
+    """
+    pid_x = tl.program_id(0)
+    batch_idx = pid_x // head_num
+    head_idx = pid_x % head_num
+
+    pid_y = tl.program_id(1)
+    block_start = pid_y * BLOCK_M
+    offs_m = block_start + tl.arange(0, BLOCK_M)
+    offs_d = tl.arange(0, head_dim)
+
+    q_off = (
+        batch_idx * stride_q_b
+        + head_idx * stride_q_h
+        + offs_m[:, None] * stride_q_s
+        + offs_d[None, :]
     )
-    k = torch.randn(
-        batch_size, seq_len, head_num, head_dim, device="cuda", dtype=torch.float16
-    )
-    v = torch.randn(
-        batch_size, seq_len, head_num, head_dim, device="cuda", dtype=torch.float16
+    q_block = tl.load(
+        q_ptr + q_off,
+        mask=offs_m[:, None] < seq_len,
+        other=0.0,
     )
 
-    out = flash_attention_forward(q, k, v, causal=False)
-    ref = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=False)
-    print("max diff:", (out - ref).abs().max().item())
-    print("flash attention test done.")
+    m = tl.full((BLOCK_M,), -float("inf"), dtype=tl.float32)
+    d = tl.zeros((BLOCK_M,), dtype=tl.float32)
+    o = tl.zeros((BLOCK_M, head_dim), dtype=tl.float32)
+
+    for j in range(0, seq_len, BLOCK_N):
+        offs_n = j + tl.arange(0, BLOCK_N)
+        k_off = (
+            batch_idx * stride_k_b
+            + head_idx * stride_k_h
+            + offs_n[:, None] * stride_k_s
+            + offs_d[None, :]
+        )
+        k_block = tl.load(
+            k_ptr + k_off,
+            mask=(offs_n[:, None] < seq_len),
+            other=0.0,
+        )
+        v_off = (
+            batch_idx * stride_v_b
+            + head_idx * stride_v_h
+            + offs_n[:, None] * stride_v_s
+            + offs_d[None, :]
+        )
+        v_block = tl.load(
+            v_ptr + v_off,
+            mask=(offs_n[:, None] < seq_len),
+            other=0.0,
+        )
+
+        mask_n = offs_n < seq_len
+        s = tl.dot(q_block, tl.trans(k_block)) * scale
+        # s 还是算出来
+        s = tl.where(mask_n[None, :], s, -float("inf"))
+
+        m_ij = tl.maximum(m, tl.max(s, axis=1))
+        p = tl.exp(s - m_ij[:, None])
+        p = tl.where(mask_n[None, :], tl.exp(s - m_ij[:, None]), 0.0)
+
+        d_new = d * tl.exp(m - m_ij) + tl.sum(p, axis=1)
+        o = (
+            o * (d * tl.exp(m - m_ij))[:, None] / d_new[:, None]
+            + tl.dot(p, v_block) / d_new[:, None]
+        )
+        m = m_ij
+        d = d_new
+
+    o_off = (
+        batch_idx * stride_o_b
+        + head_idx * stride_o_h
+        + offs_m[:, None] * stride_o_s
+        + offs_d[None, :]
+    )
+    tl.store(
+        out_ptr + o_off,
+        o,
+        mask=(offs_m[:, None] < seq_len),
+    )
 
 
-flash_attention()
+def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
+    assert q.dim() == k.dim() == v.dim(), "bad dim"
+    assert q.size() == k.size() == v.size(), "bad size"
+
+    batch_size = q.size(0)
+    head_num = q.size(1)
+    seq_len = q.size(2)
+    head_dim = q.size(3)
+    out = torch.zeros_like(q)
+    BLOCK_M = 32
+    BLOCK_N = 32
+
+    flash_attention_kernel_tile[(batch_size * head_num, triton.cdiv(seq_len, BLOCK_M))](
+        q,
+        k,
+        v,
+        out,
+        q.stride(0),
+        q.stride(2),
+        q.stride(1),
+        k.stride(0),
+        k.stride(2),
+        k.stride(1),
+        v.stride(0),
+        v.stride(2),
+        v.stride(1),
+        out.stride(0),
+        out.stride(2),
+        out.stride(1),
+        seq_len,
+        batch_size,
+        head_num,
+        head_dim,
+        1.0 / head_dim**0.5,
+        BLOCK_M,
+        BLOCK_N,
+    )
+
+    return out
+
+
+def flash_attention_forward_cpu(q_ptr, k_ptr, v_ptr, out_ptr, is_causal=False):
+    """
+    demo for flash attention forward impl cpu version
+    not run, very slow, just for demo
+    """
+    batch_size, head_num, seq_len, head_dim = q_ptr.shape
+    scale = head_dim ** (-0.5)
+
+    k_ptr = k_ptr.transpose(2, 3)
+
+    for b in range(batch_size):
+        for h in range(head_num):
+            for i in range(seq_len):
+                m = float("-inf")
+                d = 0
+                o = torch.zeros(head_dim, device=q_ptr.device, dtype=q_ptr.dtype)
+                for j in range(seq_len):
+                    if is_causal and j > i:
+                        continue
+
+                    tmp = 0
+                    for k in range(head_dim):
+                        tmp += q_ptr[b, h, i, k] * k_ptr[b, h, k, j]
+                    tmp *= scale
+
+                    m_pre = m
+                    m = max(m, tmp)
+                    d_pre = d
+                    d = d_pre * torch.exp(m_pre - m) + torch.exp(tmp - m)
+                    o = (
+                        o * (d_pre * torch.exp(m_pre - m)) / d
+                        + v_ptr[b, h, j, :] * torch.exp(tmp - m) / d
+                    )
+                out_ptr[b, h, i, :] = o

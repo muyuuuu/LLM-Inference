@@ -48,8 +48,8 @@ triton                    3.2.0
 | ✅ Task 3: 学习 CUDA 或 triton(建议)，实现 FlashAttention V1 | ` python -m unittest llm.test.flash_attn_test` |
 
 - page attention
-- flash attention
 - continuous batching
+- load cuda graph
 
 ## 服务设计
 
@@ -57,7 +57,16 @@ triton                    3.2.0
 
 # 结语
 
-大模型从对话到最终落地还有很多[优化技术](https://www.bilibili.com/video/BV1Bm6bB5EJ3/?spm_id_from=333.337.search-card.all.click&vd_source=08fc039ce87a61f2dd6954658b5ae2b5)，但这些优化技术更侧重大模型的服务和 Agent，更像大模型时代后端工程师的工作内容
+大模型推理到最终落地还有艰难的一公里：
+
+- 不同芯片内存布局不同，NCHW？NHWC？
+- 子图匹配与计算图融合
+- 多卡推理，多卡的通信与内存管理
+- int4 量化
+
+芯片部署这是个不折不扣的糙活，难以想象各个厂的芯片会有什么大坑，暂时没有兴趣；子图匹配与计算图融合有时间再看；模型量化暂时没兴趣；工作相关，后面会去看多卡训练相关的项目。
+
+此外，大模型对话还会涉及很多[优化技术](https://www.bilibili.com/video/BV1Bm6bB5EJ3/?spm_id_from=333.337.search-card.all.click&vd_source=08fc039ce87a61f2dd6954658b5ae2b5)，但这些优化技术更侧重大模型的服务和 Agent，更像大模型时代后端工程师的工作内容
 
 - Speculative Decoding：用一个小而快的草稿模型提前预测多个 token，再用大模型并行验证这些预测。
 - Memory：长期记忆和短期记忆的管理工具。
@@ -65,7 +74,7 @@ triton                    3.2.0
 - MCP(Model Context Protocol)：大模型与外部数据源和工具之间的通信协议。
 - Skills：有了 MCP 就可以调用多个工具，skills 定义了多个工具该如何搭配使用，是 Agent 的操作指南。
 
-RAG 涉及数据库和向量检索，Memory 的历史记忆涉及摘要生成，也许会用其他技术来记录用户的操作习惯。however，这些东西每家公司的实现方式都不同，没有什么统一的标准答案，和 GPU 优化关系不大。由于本人的工作和大模型服务/Agent相差甚远，所以对大模型推理框架的探索到此结束，后面会去看多卡训练相关的项目。
+RAG 涉及数据库和向量检索，Memory 的历史记忆涉及摘要生成，也许会用其他技术来记录用户的操作习惯。however，这些东西每家公司的实现方式都不同，没有什么统一的标准答案，和 GPU 优化关系不大。由于本人的工作和大模型服务/Agent相差甚远，所以对大模型推理框架的探索到此结束。
 
 # 参考
 

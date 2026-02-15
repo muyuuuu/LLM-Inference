@@ -1,5 +1,6 @@
 import torch
 import unittest
+import random
 
 from llm.layer import _Rope
 
@@ -128,7 +129,14 @@ class TestRope(unittest.TestCase):
 
         random_x = torch.randn((batch, seq_len, num_head, head_dim), device="cuda")
 
-        my_rope = _Rope(head_dim, seq_len, 10000, device="cuda", traditional=True)
+        my_rope = _Rope(
+            head_dim,
+            seq_len,
+            10000,
+            device="cuda",
+            traditional=True,
+            dtype=torch.float32,
+        )
         ref_rope = RotaryPositionalEmbeddings(head_dim, seq_len, 10000).cuda()
 
         res = my_rope(random_x)
@@ -138,4 +146,31 @@ class TestRope(unittest.TestCase):
 
         my_rope = _Rope(head_dim, seq_len, 10000, device="cuda", traditional=False)
         res = my_rope(random_x)
-        print("_Rope impl success")
+
+        sub_seq_len = 57
+        multi_batch_pos = [
+            random.randint(0, seq_len - sub_seq_len) for _ in range(batch)
+        ]
+        off = torch.empty((batch, sub_seq_len), dtype=torch.long, device="cuda")
+        for i in range(batch):
+            off[i] = torch.arange(
+                multi_batch_pos[i],
+                multi_batch_pos[i] + sub_seq_len,
+                dtype=torch.long,
+                device="cuda",
+            ).unsqueeze(0)
+
+        random_x = torch.randn((batch, sub_seq_len, num_head, head_dim), device="cuda")
+        my_rope = _Rope(
+            head_dim,
+            seq_len,
+            10000,
+            device="cuda",
+            traditional=True,
+            dtype=torch.float32,
+        )
+
+        res = my_rope(random_x, offset=off)
+        ref = ref_rope(random_x, input_pos=off)
+
+        self.assertTrue(torch.allclose(res, ref, atol=1e-3))

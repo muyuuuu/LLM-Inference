@@ -3,7 +3,15 @@ import math
 
 
 class _Rope:
-    def __init__(self, dim, max_seq_len, base=10000, traditional=False, device="cpu"):
+    def __init__(
+        self,
+        dim,
+        max_seq_len,
+        base=10000,
+        traditional=False,
+        device="cpu",
+        dtype=torch.bfloat16,
+    ):
 
         assert dim % 2 == 0, "dim % 2 !=0"
 
@@ -13,13 +21,8 @@ class _Rope:
         self._device = device
 
         theta = [1.0 / math.pow(base, i / dim) for i in range(0, dim, 2)]
-
-        self._theta = (
-            torch.tensor(theta, dtype=torch.bfloat16).reshape(1, -1).to(device)
-        )
-        self._idx = (
-            torch.arange(max_seq_len, dtype=self._theta.dtype).reshape(-1, 1).to(device)
-        )
+        self._theta = torch.tensor(theta, dtype=dtype).reshape(1, -1).to(device)
+        self._idx = torch.arange(max_seq_len, dtype=dtype, device=device).reshape(-1, 1)
 
         # in position m, rotate 2i and 2i + 1
         tmp = torch.matmul(self._idx, self._theta)
@@ -35,7 +38,7 @@ class _Rope:
         ), "input dimention should be [batch, seq_len, num_head, head_dim]"
 
         origin_dtype = x.dtype
-        seq_len = x.size(1)
+        batch_size, seq_len = x.size(0), x.size(1)
         _cos = self._cos_value[:seq_len,]
 
         _sin = self._sin_value[:seq_len,]
@@ -44,8 +47,8 @@ class _Rope:
             _sin = self._sin_value[offset]
 
         # sin and cos: [1, seq_len, 1, head_dim / 2]
-        _cos = _cos.reshape(1, seq_len, 1, -1)
-        _sin = _sin.reshape(1, seq_len, 1, -1)
+        _cos = _cos.reshape(-1, seq_len, 1, self._dim // 2)
+        _sin = _sin.reshape(-1, seq_len, 1, self._dim // 2)
 
         if self._traditional:
             # x_shaped: [batch, seq_len, num_head, head_dim / 2, 2]

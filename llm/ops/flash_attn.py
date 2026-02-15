@@ -21,8 +21,11 @@ def flash_attention_kernel(
     stride_o_b: tl.int64,
     stride_o_s: tl.int64,
     stride_o_h: tl.int64,
-    seq_len: tl.int64,
-    batch_size: tl.int64,
+    q_seq_len: tl.int64,
+    k_seq_len: tl.int64,
+    q_total_size: tl.int64,
+    k_total_size: tl.int64,
+    v_total_size: tl.int64,
     head_num: tl.int64,
     head_dim: tl.constexpr,
     scale: tl.float32,
@@ -36,9 +39,7 @@ def flash_attention_kernel(
     batch_idx = pid_x // head_num
     head_idx = pid_x % head_num
 
-    total_size = seq_len * head_dim * batch_size * head_num
-
-    for i in range(0, seq_len):
+    for i in range(0, q_seq_len):
         q_off = (
             batch_idx * stride_q_b
             + head_idx * stride_q_h
@@ -47,14 +48,14 @@ def flash_attention_kernel(
         )
         q_block = tl.load(
             q_ptr + q_off,
-            mask=q_off < total_size,
+            mask=q_off < q_total_size,
             other=0.0,
         )
 
         m = -float("inf")
         d = 0.0
         o = tl.zeros((head_dim,), dtype=tl.float32)
-        for j in range(0, seq_len):
+        for j in range(0, k_seq_len):
             k_off = (
                 batch_idx * stride_k_b
                 + head_idx * stride_k_h
@@ -63,7 +64,7 @@ def flash_attention_kernel(
             )
             k_block = tl.load(
                 k_ptr + k_off,
-                mask=k_off < total_size,
+                mask=k_off < k_total_size,
                 other=0.0,
             )
             v_off = (
@@ -74,11 +75,11 @@ def flash_attention_kernel(
             )
             v_block = tl.load(
                 v_ptr + v_off,
-                mask=v_off < total_size,
+                mask=v_off < v_total_size,
                 other=0.0,
             )
 
-            mask_n = j < seq_len
+            mask_n = j < k_seq_len
             if is_causal:
                 mask_n = mask_n & (j <= i)
 
@@ -100,21 +101,30 @@ def flash_attention_kernel(
         tl.store(
             out_ptr + o_off,
             o,
-            mask=o_off < total_size,
+            mask=o_off < q_total_size,
         )
 
 
 def flash_attention_forward_triton(q, k, v, is_causal=False):
     assert q.dim() == k.dim() == v.dim(), "bad dim"
-    assert q.size() == k.size() == v.size(), "bad size"
+    assert k.size() == v.size(), "bad size"
 
     batch_size = q.size(0)
-    head_num = q.size(1)
-    seq_len = q.size(2)
+    q_head_num = q.size(1)
+    q_seq_len = q.size(2)
     head_dim = q.size(3)
+
+    k_head_num = k.size(1)
+    k_seq_len = k.size(2)
+
+    if q_head_num != k_head_num:
+        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        k = k.repeat_interleave(q_head_num // k_head_num, dim=1)
+        v = v.repeat_interleave(q_head_num // k_head_num, dim=1)
+
     out = torch.zeros_like(q)
 
-    flash_attention_kernel[(batch_size * head_num,)](
+    flash_attention_kernel[(batch_size * q_head_num,)](
         q,
         k,
         v,
@@ -131,9 +141,12 @@ def flash_attention_forward_triton(q, k, v, is_causal=False):
         out.stride(0),
         out.stride(2),
         out.stride(1),
-        seq_len,
-        batch_size,
-        head_num,
+        q_seq_len,
+        k_seq_len,
+        batch_size * q_head_num * q_seq_len * head_dim,
+        batch_size * q_head_num * k_seq_len * head_dim,
+        batch_size * q_head_num * k_seq_len * head_dim,
+        q_head_num,
         head_dim,
         1.0 / head_dim**0.5,
         is_causal=is_causal,
@@ -159,9 +172,12 @@ def flash_attention_kernel_tile(
     stride_o_b: tl.int64,
     stride_o_s: tl.int64,
     stride_o_h: tl.int64,
-    seq_len: tl.int64,
-    batch_size: tl.int64,
-    head_num: tl.int64,
+    q_seq_len: tl.int64,
+    k_seq_len: tl.int64,
+    q_total_size: tl.int64,
+    k_total_size: tl.int64,
+    v_total_size: tl.int64,
+    q_head_num: tl.int64,
     head_dim: tl.constexpr,
     scale: tl.float32,
     is_causal: tl.constexpr,
@@ -172,8 +188,8 @@ def flash_attention_kernel_tile(
     flash attention forward kernel
     """
     pid_x = tl.program_id(0)
-    batch_idx = pid_x // head_num
-    head_idx = pid_x % head_num
+    batch_idx = pid_x // q_head_num
+    head_idx = pid_x % q_head_num
 
     pid_y = tl.program_id(1)
     block_start = pid_y * BLOCK_M
@@ -188,7 +204,7 @@ def flash_attention_kernel_tile(
     )
     q_block = tl.load(
         q_ptr + q_off,
-        mask=offs_m[:, None] < seq_len,
+        mask=offs_m[:, None] < q_seq_len,
         other=0.0,
     )
 
@@ -196,7 +212,7 @@ def flash_attention_kernel_tile(
     d = tl.zeros((BLOCK_M,), dtype=tl.float32)
     o = tl.zeros((BLOCK_M, head_dim), dtype=tl.float32)
 
-    for j in range(0, seq_len, BLOCK_N):
+    for j in range(0, k_seq_len, BLOCK_N):
         offs_n = j + tl.arange(0, BLOCK_N)
         k_off = (
             batch_idx * stride_k_b
@@ -206,7 +222,7 @@ def flash_attention_kernel_tile(
         )
         k_block = tl.load(
             k_ptr + k_off,
-            mask=(offs_n[:, None] < seq_len),
+            mask=(offs_n[:, None] < k_seq_len),
             other=0.0,
         )
         v_off = (
@@ -217,11 +233,11 @@ def flash_attention_kernel_tile(
         )
         v_block = tl.load(
             v_ptr + v_off,
-            mask=(offs_n[:, None] < seq_len),
+            mask=(offs_n[:, None] < k_seq_len),
             other=0.0,
         )
 
-        mask_n = offs_n < seq_len
+        mask_n = offs_n < k_seq_len
         if is_causal:
             mask_n = mask_n[None, :] & (offs_n[None, :] <= offs_m[:, None])
         else:
@@ -251,25 +267,27 @@ def flash_attention_kernel_tile(
     tl.store(
         out_ptr + o_off,
         o,
-        mask=(offs_m[:, None] < seq_len),
+        mask=(offs_m[:, None] < q_seq_len),
     )
 
 
 def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
     assert q.dim() == k.dim() == v.dim(), "bad dim"
-    assert (
-        q.size() == k.size() == v.size()
-    ), f"bad size q_size is {q.size()}, k_size is {k.size()}, v_size is {v.size()}"
 
-    batch_size = q.size(0)
-    head_num = q.size(1)
-    seq_len = q.size(2)
-    head_dim = q.size(3)
+    batch_size, q_head_num, q_seq_len, head_dim = q.size()
+    k_head_num = k.size(1)
+    k_seq_len = k.size(2)
+
     out = torch.zeros_like(q)
     BLOCK_M = 32
     BLOCK_N = 32
 
-    flash_attention_kernel_tile[(batch_size * head_num, triton.cdiv(seq_len, BLOCK_M))](
+    if q_head_num != k_head_num:
+        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        k = k.repeat_interleave(q_head_num // k_head_num, dim=1)
+        v = v.repeat_interleave(q_head_num // k_head_num, dim=1)
+
+    flash_attention_kernel_tile[(batch_size * q_head_num, triton.cdiv(q_seq_len, BLOCK_M))](
         q,
         k,
         v,
@@ -286,9 +304,12 @@ def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
         out.stride(0),
         out.stride(2),
         out.stride(1),
-        seq_len,
-        batch_size,
-        head_num,
+        q_seq_len,
+        k_seq_len,
+        batch_size * q_head_num * q_seq_len * head_dim,
+        batch_size * q_head_num * k_seq_len * head_dim,
+        batch_size * q_head_num * k_seq_len * head_dim,
+        q_head_num,
         head_dim,
         1.0 / head_dim**0.5,
         is_causal,
@@ -304,18 +325,28 @@ def flash_attention_forward_cpu(q_ptr, k_ptr, v_ptr, out_ptr, is_causal=False):
     demo for flash attention forward impl cpu version
     not run, very slow, just for demo
     """
-    batch_size, head_num, seq_len, head_dim = q_ptr.shape
+    batch_size, q_head_num, q_seq_len, head_dim = q_ptr.shape
+    k_head_num = k_ptr.size(1)
+
+    if q_head_num != k_head_num:
+        v_head_num = v_ptr.size(1)
+        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        k_ptr = k_ptr.repeat_interleave(q_head_num // k_head_num, dim=1)
+        v_ptr = v_ptr.repeat_interleave(q_head_num // v_head_num, dim=1)
+
+    k_seq_len = k_ptr.size(2)
+
     scale = head_dim ** (-0.5)
 
     k_ptr = k_ptr.transpose(2, 3)
 
     for b in range(batch_size):
-        for h in range(head_num):
-            for i in range(seq_len):
+        for h in range(q_head_num):
+            for i in range(q_seq_len):
                 m = float("-inf")
                 d = 0
                 o = torch.zeros(head_dim, device=q_ptr.device, dtype=q_ptr.dtype)
-                for j in range(seq_len):
+                for j in range(k_seq_len):
                     if is_causal and j > i:
                         continue
 

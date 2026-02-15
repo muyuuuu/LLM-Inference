@@ -16,21 +16,25 @@ class FlashAttnTestCase(unittest.TestCase):
     def _test_flash_cpu_impl(self):
         for i in range(3):
             batch = 2
-            seq_len = random.randint(10, 20)
-            head_num = 1
+            q_seq_len = random.randint(10, 20)
+            q_head_num = 2
+            k_head_num = 1
+            v_head_num = 1
+            k_seq_len = random.randint(10, 20)
             head_dim = 16
 
-            q = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            k = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            v = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
+            q = torch.randn((batch, q_head_num, q_seq_len, head_dim)).cuda()
+            k = torch.randn((batch, k_head_num, k_seq_len, head_dim)).cuda()
+            v = torch.randn((batch, v_head_num, k_seq_len, head_dim)).cuda()
+
             is_causal = True if random.randint(0, 1) >= 1 else False
             ref = nn.functional.scaled_dot_product_attention(
-                q, k, v, is_causal=is_causal
+                q, k, v, is_causal=is_causal, enable_gqa=True
             )
             out = torch.zeros_like(ref)
             flash_attention_forward_cpu(q, k, v, out, is_causal=is_causal)
             print(
-                f" >>> {[batch, head_num, seq_len, head_dim]}, flash_attention_forward_cpu",
+                f" >>> flash_attention_forward_cpu",
                 f"max diff: {(ref - out).abs().max():.4e}",
                 sep=", ",
             )
@@ -38,30 +42,34 @@ class FlashAttnTestCase(unittest.TestCase):
     def _test_flash_triton_impl(self):
         for i in range(6):
             batch = random.randint(10, 18)
-            seq_len = random.randint(400, 500)
-            head_num = 16
+            q_seq_len = random.randint(400, 500)
+            k_seq_len = random.randint(400, 500)
+            q_head_num = 16
+            k_head_num = 4
+            v_head_num = 4
             head_dim = 64
 
-            q = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            k = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            v = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
+            q = torch.randn((batch, q_head_num, q_seq_len, head_dim)).cuda()
+            k = torch.randn((batch, k_head_num, k_seq_len, head_dim)).cuda()
+            v = torch.randn((batch, v_head_num, k_seq_len, head_dim)).cuda()
+
             is_causal = True if random.randint(0, 1) >= 1 else False
 
             bench_time = time.time()
             ref = nn.functional.scaled_dot_product_attention(
-                q, k, v, is_causal=is_causal
+                q, k, v, is_causal=is_causal, enable_gqa=True
             )
             torch.cuda.synchronize()
             bench_time = time.time() - bench_time
 
             test_time = time.time()
-            out = flash_attention_forward_triton(q, k, v)
+            out = flash_attention_forward_triton(q, k, v, is_causal=is_causal)
             torch.cuda.synchronize()
             test_time = time.time() - test_time
             if i >= 1:
                 print(
-                    f" >>> {[batch, head_num, seq_len, head_dim]}",
-                    f"flash_attention_forward_triton, bench_time: {bench_time:.4e}, my_time:{test_time:.4e}",
+                    f" >>> flash_attention_forward_triton",
+                    f"bench_time: {bench_time:.4e}, my_time:{test_time:.4e}",
                     f"max diff: {(ref - out).abs().max():.4e}",
                     sep=", ",
                 )
@@ -69,30 +77,35 @@ class FlashAttnTestCase(unittest.TestCase):
     def _test_flash_triton_tile_impl(self):
         for i in range(6):
             batch = random.randint(10, 18)
-            seq_len = random.randint(400, 500)
-            head_num = 16
+            q_seq_len = random.randint(100, 400)
+            k_seq_len = random.randint(400, 500)
+            q_head_num = 16
+            k_head_num = 4
+            v_head_num = 4
+            head_dim = 64
             head_dim = 128
 
-            q = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            k = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            v = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
+            q = torch.randn((batch, q_head_num, q_seq_len, head_dim)).cuda()
+            k = torch.randn((batch, k_head_num, k_seq_len, head_dim)).cuda()
+            v = torch.randn((batch, v_head_num, k_seq_len, head_dim)).cuda()
+
             is_causal = True if random.randint(0, 1) >= 1 else False
 
             bench_time = time.time()
             ref = nn.functional.scaled_dot_product_attention(
-                q, k, v, is_causal=is_causal
+                q, k, v, is_causal=is_causal, enable_gqa=True
             )
             torch.cuda.synchronize()
             bench_time = time.time() - bench_time
 
             test_time = time.time()
-            out = flash_attention_tile_forward_triton(q, k, v)
+            out = flash_attention_tile_forward_triton(q, k, v, is_causal=is_causal)
             torch.cuda.synchronize()
             test_time = time.time() - test_time
             if i >= 1:
                 print(
-                    f" >>> {[batch, head_num, seq_len, head_dim]}",
-                    f"flash_attention_tile_forward_triton, bench_time: {bench_time:.4e}, my_time:{test_time:.4e}",
+                    f" >>> flash_attention_tile_forward_triton",
+                    f"bench_time: {bench_time:.4e}, my_time:{test_time:.4e}",
                     f"max diff: {(ref - out).abs().max():.4e}",
                     sep=", ",
                 )

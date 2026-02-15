@@ -7,7 +7,6 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
     assert query.size(0) == key.size(0) == value.size(0), "QKV's shape is not equal"
 
     origin_dtype = query.dtype
-    batch_size = query.size(0)
 
     if query.dim() == 3:
         query = query.unsqueeze(1)
@@ -20,6 +19,14 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
 
     assert query.size(3) == key.size(3) == value.size(3), "QKV must has same dimension"
 
+    q_head_num = query.size(1)
+    k_head_num = key.size(1)
+    v_head_num = value.size(1)
+
+    if q_head_num != k_head_num:
+        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        key = key.repeat_interleave(q_head_num // k_head_num, dim=1)
+        value = value.repeat_interleave(q_head_num // v_head_num, dim=1)
 
     q_dim = query.size(3)
     q_length = query.size(2)

@@ -3,7 +3,6 @@ import torch.nn as nn
 import unittest
 import random
 import time
-import math
 
 from llm.ops import (
     flash_attention_forward_cpu,
@@ -24,7 +23,7 @@ class FlashAttnTestCase(unittest.TestCase):
             q = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
             k = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
             v = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            is_causal = True if random.randint(0, 2) >= 1 else False
+            is_causal = True if random.randint(0, 1) >= 1 else False
             ref = nn.functional.scaled_dot_product_attention(
                 q, k, v, is_causal=is_causal
             )
@@ -46,8 +45,7 @@ class FlashAttnTestCase(unittest.TestCase):
             q = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
             k = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
             v = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            # is_causal = True if random.randint(0, 2) >= 1 else False
-            is_causal = False
+            is_causal = True if random.randint(0, 1) >= 1 else False
 
             bench_time = time.time()
             ref = nn.functional.scaled_dot_product_attention(
@@ -78,8 +76,7 @@ class FlashAttnTestCase(unittest.TestCase):
             q = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
             k = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
             v = torch.randn((batch, head_num, seq_len, head_dim)).cuda()
-            # is_causal = True if random.randint(0, 2) >= 1 else False
-            is_causal = False
+            is_causal = True if random.randint(0, 1) >= 1 else False
 
             bench_time = time.time()
             ref = nn.functional.scaled_dot_product_attention(

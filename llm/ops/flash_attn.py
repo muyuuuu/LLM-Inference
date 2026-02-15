@@ -26,6 +26,7 @@ def flash_attention_kernel(
     head_num: tl.int64,
     head_dim: tl.constexpr,
     scale: tl.float32,
+    is_causal: tl.constexpr,
 ):
     """
     flash attention forward kernel
@@ -77,7 +78,13 @@ def flash_attention_kernel(
                 other=0.0,
             )
 
+            mask_n = j < seq_len
+            if is_causal:
+                mask_n = mask_n & (j <= i)
+
             tmp = tl.sum(q_block * k_block) * scale
+            tmp = tl.where(mask_n, tmp, -float("inf"))
+
             m_pre = m
             m = max(m, tmp)
             d_pre = d
@@ -129,6 +136,7 @@ def flash_attention_forward_triton(q, k, v, is_causal=False):
         head_num,
         head_dim,
         1.0 / head_dim**0.5,
+        is_causal=is_causal,
     )
     return out
 
@@ -156,6 +164,7 @@ def flash_attention_kernel_tile(
     head_num: tl.int64,
     head_dim: tl.constexpr,
     scale: tl.float32,
+    is_causal: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
 ):
@@ -213,13 +222,17 @@ def flash_attention_kernel_tile(
         )
 
         mask_n = offs_n < seq_len
+        if is_causal:
+            mask_n = mask_n[None, :] & (offs_n[None, :] <= offs_m[:, None])
+        else:
+            mask_n = mask_n[None, :]
+
         s = tl.dot(q_block, tl.trans(k_block)) * scale
-        # s 还是算出来
-        s = tl.where(mask_n[None, :], s, -float("inf"))
+        s = tl.where(mask_n, s, -float("inf"))
 
         m_ij = tl.maximum(m, tl.max(s, axis=1))
         p = tl.exp(s - m_ij[:, None])
-        p = tl.where(mask_n[None, :], tl.exp(s - m_ij[:, None]), 0.0)
+        p = tl.where(mask_n, tl.exp(s - m_ij[:, None]), 0.0)
 
         d_new = d * tl.exp(m - m_ij) + tl.sum(p, axis=1)
         o = (
@@ -276,6 +289,7 @@ def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
         head_num,
         head_dim,
         1.0 / head_dim**0.5,
+        is_causal,
         BLOCK_M,
         BLOCK_N,
     )

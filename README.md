@@ -40,12 +40,13 @@ triton                    3.2.0
 
 ## 工程优化
 
-| 优化                                                        | 测试命令                                       |
-| ----------------------------------------------------------- | ---------------------------------------------- |
-| ✅ Task 1.1: 解决重复生成问题，实现 `TopK` 采样              | `python -m llm.executor.run_model --topk 100`  |
-| ✅ Task 1.2: 解决重复生成问题，实现 `TopN` 采样              | `python -m llm.executor.run_model --topp 0.7`  |
-| ✅ Task 2: 实现 PD 分离与 KV Cache                           | `python -m llm.executor.run_model --kv_cache`  |
-| ✅ Task 3: 学习 CUDA 或 triton(建议)，实现 FlashAttention V1 | ` python -m unittest llm.test.flash_attn_test` |
+|   #   | 优化                                                | 测试命令                                                                                        |
+| :---: | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+|  1.1  | ✅ 解决重复生成问题，实现 `TopK` 采样                | `python -m llm.executor.run_model --topk 100`                                                   |
+|  1.2  | ✅ 解决重复生成问题，实现 `TopN` 采样                | `python -m llm.executor.run_model --topp 0.7`                                                   |
+|   2   | ✅ 实现 PD 分离与 KV Cache                           | `python -m llm.executor.run_model --kv_cache 1`                                                 |
+|   3   | ✅ 学习 CUDA 或 triton(建议)，实现 FlashAttention V1 | `python -m unittest llm.test.flash_attn_test`，`python -m llm.executor.run_model --use_flash 1` |
+
 
 - page attention
 - continuous batching

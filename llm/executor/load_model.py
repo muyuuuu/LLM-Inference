@@ -41,8 +41,10 @@ class Qwen3Loader:
         del self.model
         return my_model
 
-    def convert_official_model(self):
+    def convert_official_model(self, use_flash_attention=False):
         qwen3_config = self._convert_qwen3_config()
+        qwen3_config.use_flash_attention = use_flash_attention
+
         qwen3_model = self._convert_qwen3_model(qwen3_config)
         print("Convert QWen3 Model Success")
         return qwen3_model, qwen3_config, self.tokenizer
@@ -50,7 +52,6 @@ class Qwen3Loader:
     def load_model_weights(self, model_name):
         official_model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            dtype=torch.bfloat16,
             trust_remote_code=True,
         )
         print("Qwen3 Model Load Success")

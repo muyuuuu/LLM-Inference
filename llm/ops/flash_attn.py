@@ -257,7 +257,9 @@ def flash_attention_kernel_tile(
 
 def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
     assert q.dim() == k.dim() == v.dim(), "bad dim"
-    assert q.size() == k.size() == v.size(), "bad size"
+    assert (
+        q.size() == k.size() == v.size()
+    ), f"bad size q_size is {q.size()}, k_size is {k.size()}, v_size is {v.size()}"
 
     batch_size = q.size(0)
     head_num = q.size(1)

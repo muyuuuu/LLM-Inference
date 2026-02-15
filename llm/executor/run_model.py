@@ -10,15 +10,6 @@ from .generate import (
 
 
 if __name__ == "__main__":
-    loader = Qwen3Loader()
-    qwen3_model, _, tokenizer = loader.convert_official_model()
-
-    messages = [{"role": "system", "content": "什么是 qwen？不超过 20 字"}]
-
-    input_ids = tokenizer.apply_chat_template(
-        messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
-    ).cuda()
-
     parser = argparse.ArgumentParser(
         description="Text generation with sampling strategies."
     )
@@ -37,8 +28,23 @@ if __name__ == "__main__":
         default=False,
         help="use cache",
     )
+    parser.add_argument(
+        "--use_flash",
+        type=bool,
+        default=False,
+        help="use flash attention",
+    )
 
     args = parser.parse_args()
+
+    loader = Qwen3Loader()
+    qwen3_model, _, tokenizer = loader.convert_official_model(use_flash_attention=args.use_flash)
+
+    messages = [{"role": "system", "content": "什么是 qwen？不超过 20 字"}]
+
+    input_ids = tokenizer.apply_chat_template(
+        messages, tokenize=True, add_generation_prompt=True, return_tensors="pt"
+    ).cuda()
 
     if args.kv_cache:
         generate_kv_cache_base(

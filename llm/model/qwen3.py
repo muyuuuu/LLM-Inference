@@ -10,6 +10,8 @@ from llm.layer import (
     _TiedEmbedding,
 )
 
+from llm.ops import flash_attention_tile_forward_triton
+
 
 @dataclass
 class Qwen3Config:
@@ -24,6 +26,7 @@ class Qwen3Config:
     rms_eps: float = 1e-5
     use_tie_embedding: bool = False
     is_causal: bool = True
+    use_flash_attention: bool = False
 
 
 class Qwen3MultiHeadAttention:
@@ -45,6 +48,7 @@ class Qwen3MultiHeadAttention:
         max_seq_len=32768,
         theta=1e6,
         rms_norm_eps=1e-5,
+        use_flash_attention=False,
     ):
         assert q_num_head % kv_num_head == 0, "q_num_head % kv_num_head != 0"
 
@@ -68,6 +72,8 @@ class Qwen3MultiHeadAttention:
         self.max_seq_len = max_seq_len
         self.theta = theta
         self.rms_norm_eps = rms_norm_eps
+
+        self.use_flash_attention = use_flash_attention
 
         self.rope_layer = _Rope(
             self.head_dim,
@@ -103,11 +109,33 @@ class Qwen3MultiHeadAttention:
             cache.save_kv_to_cache(_k, _v)
             _k, _v = cache.get_cached_kv()
 
-        y = (
-            _scaled_dot_product_attention(_q, _k, _v, is_causal=is_causal, mask=mask)
-            .transpose(1, 2)
-            .reshape(batch_size, seq_len, self.hidden_size)
-        )
+        q_batch, q_num_head, q_length, q_dim = _q.size()
+        k_batch, k_num_head, k_length, k_dim = _k.size()
+        v_batch, v_num_head, v_length, v_dim = _v.size()
+
+        assert q_dim == k_dim == v_dim, "QKV dim not equal"
+        assert q_num_head % k_num_head == 0, "query head num mod kv head num != 0"
+        heads_per_group = q_num_head // k_num_head
+
+        if heads_per_group > 1:
+            _k = _k.repeat_interleave(heads_per_group, dim=1)
+            _v = _v.repeat_interleave(heads_per_group, dim=1)
+
+        if self.use_flash_attention:
+            y = flash_attention_tile_forward_triton(_q, _k, _v, is_causal=is_causal)
+            y = (
+                y.transpose(1, 2)
+                .reshape(batch_size, seq_len, self.hidden_size)
+                .contiguous()
+            )
+        else:
+            y = (
+                _scaled_dot_product_attention(
+                    _q, _k, _v, is_causal=is_causal, mask=mask
+                )
+                .transpose(1, 2)
+                .reshape(batch_size, seq_len, self.hidden_size)
+            )
 
         return F.linear(y, self.o_weight)
 
@@ -136,6 +164,7 @@ class Qwen2TransformBlock:
         w_rms_norm1,  # args for rms_norm
         w_rms_norm2,
         rms_norm_eps=1e-5,
+        use_flash_attention=False,
     ):
         self.attn = Qwen3MultiHeadAttention(
             q_num_head=q_num_head,
@@ -153,6 +182,7 @@ class Qwen2TransformBlock:
             max_seq_len=max_seq_len,
             theta=theta,
             rms_norm_eps=rms_norm_eps,
+            use_flash_attention=use_flash_attention,
         )
 
         self.mlp = _MLP(w_gate, w_up, w_down)
@@ -225,6 +255,7 @@ class Qwen3Model:
                     max_seq_len=self.config.max_seq_len,
                     theta=self.config.theta,
                     rms_norm_eps=self.config.rms_eps,
+                    use_flash_attention=self.config.use_flash_attention,
                 )
             )
 

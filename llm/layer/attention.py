@@ -20,20 +20,10 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
 
     assert query.size(3) == key.size(3) == value.size(3), "QKV must has same dimension"
 
-    q_batch, q_num_head, q_length, q_dim = query.size()
-    k_batch, k_num_head, k_length, k_dim = key.size()
-    v_batch, v_num_head, v_length, v_dim = value.size()
 
-    assert q_dim == k_dim == v_dim, "QKV dim not equal"
-    assert q_num_head % k_num_head == 0, "query head num mod kv head num != 0"
-    heads_per_group = q_num_head // k_num_head
-
-    if heads_per_group > 1:
-        key = key.repeat_interleave(heads_per_group, dim=1)
-        value = value.repeat_interleave(heads_per_group, dim=1)
-
-    # q size is [B, q_num_head, q_length, dim]
-    # kv size is [B, q_num_head, kv_length, dim]
+    q_dim = query.size(3)
+    q_length = query.size(2)
+    k_length = key.size(2)
 
     device = query.device
     factor = 1 / math.sqrt(q_dim)
@@ -55,7 +45,7 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
     else:
         if mask is not None:
             if mask.dtype == torch.bool:
-                mask_values = torch.where(mask_values, float("-inf"), 0.0).to(
+                mask_values = torch.where(mask, float("-inf"), 0.0).to(
                     origin_dtype
                 )
                 attn += mask_values

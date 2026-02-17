@@ -24,7 +24,9 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
     v_head_num = value.size(1)
 
     if q_head_num != k_head_num:
-        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        assert (
+            q_head_num % k_head_num == 0
+        ), "q_head_num must be divisible by k_head_num"
         key = key.repeat_interleave(q_head_num // k_head_num, dim=1)
         value = value.repeat_interleave(q_head_num // v_head_num, dim=1)
 
@@ -51,10 +53,10 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
         attn += mask.to(device)
     else:
         if mask is not None:
+            if mask.dim() == 3:
+                mask = mask.unsqueeze(1)
             if mask.dtype == torch.bool:
-                mask_values = torch.where(mask, float("-inf"), 0.0).to(
-                    origin_dtype
-                )
+                mask_values = torch.where(mask, float("-inf"), 0.0).to(origin_dtype)
                 attn += mask_values
             else:
                 attn += mask

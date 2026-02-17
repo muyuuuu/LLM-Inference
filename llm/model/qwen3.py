@@ -106,8 +106,9 @@ class Qwen3MultiHeadAttention:
         _v = _v.transpose(1, 2)
 
         if cache is not None:
-            cache.save_kv_to_cache(_k, _v)
-            _k, _v = cache.get_cached_kv()
+            _k, _v, mask, max_seq_len = cache.update_and_fetch_kv(
+                _k, _v, mask, mask_length=seq_len
+            )
 
         q_batch, q_num_head, q_length, q_dim = _q.size()
         k_batch, k_num_head, k_length, k_dim = _k.size()

@@ -123,7 +123,9 @@ class Qwen3MultiHeadAttention:
             _v = _v.repeat_interleave(heads_per_group, dim=1)
 
         if self.use_flash_attention:
-            y = flash_attention_tile_forward_triton(_q, _k, _v, is_causal=is_causal)
+            y = flash_attention_tile_forward_triton(
+                _q, _k, _v, is_causal=is_causal, mask=mask
+            )
             y = (
                 y.transpose(1, 2)
                 .reshape(batch_size, seq_len, self.hidden_size)

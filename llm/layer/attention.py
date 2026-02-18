@@ -47,7 +47,7 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
         j = torch.arange(k_length).view(1, -1)
         mask = torch.where(
             j > i,
-            torch.tensor(float("-inf")),
+            torch.tensor(-1e5),
             torch.tensor(0.0),
         ).to(origin_dtype)
         attn += mask.to(device)
@@ -56,7 +56,7 @@ def _scaled_dot_product_attention(query, key, value, mask=None, is_causal=True):
             if mask.dim() == 3:
                 mask = mask.unsqueeze(1)
             if mask.dtype == torch.bool:
-                mask_values = torch.where(mask, float("-inf"), 0.0).to(origin_dtype)
+                mask_values = torch.where(mask, -1e5, 0.0).to(origin_dtype)
                 attn += mask_values
             else:
                 attn += mask

@@ -1,7 +1,6 @@
 import torch
 from dataclasses import dataclass
 from llm.executor.kv_cache import BatchKVCache, EasyKVCache
-from llm.executor.generate import apply_repetition_penalty
 from llm.executor.load_model import Qwen3Loader
 
 
@@ -16,7 +15,7 @@ def topk_func(x, top_k=100):
     """
     top_k_values, _ = torch.topk(x, top_k, dim=-1)
     min_top_k_value = top_k_values[:, -1].unsqueeze(-1)  # shape: (batch_size, 1)
-    x[x < min_top_k_value] = -float("inf")
+    x[x < min_top_k_value] = -1e5
     return x
 
 
@@ -166,7 +165,7 @@ class Executor:
         filter = topk_func
 
         loader = Qwen3Loader()
-        model, _, tokenizer = loader.convert_official_model()
+        model, _, tokenizer = loader.convert_official_model(use_flash_attention=True)
 
         self.model_runner = ModelRunner(
             model=model,

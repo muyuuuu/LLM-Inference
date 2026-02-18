@@ -8,6 +8,7 @@ def flash_attention_kernel(
     q_ptr,
     k_ptr,
     v_ptr,
+    mask_ptr,
     out_ptr,
     stride_q_b: tl.int64,
     stride_q_s: tl.int64,
@@ -21,6 +22,9 @@ def flash_attention_kernel(
     stride_o_b: tl.int64,
     stride_o_s: tl.int64,
     stride_o_h: tl.int64,
+    stride_mask_b: tl.int64,
+    stride_mask_i: tl.int64,
+    stride_mask_j: tl.int64,
     q_seq_len: tl.int64,
     k_seq_len: tl.int64,
     q_total_size: tl.int64,
@@ -52,7 +56,7 @@ def flash_attention_kernel(
             other=0.0,
         )
 
-        m = -float("inf")
+        m = -1e5
         d = 0.0
         o = tl.zeros((head_dim,), dtype=tl.float32)
         for j in range(0, k_seq_len):
@@ -79,12 +83,20 @@ def flash_attention_kernel(
                 other=0.0,
             )
 
+            tmp = tl.sum(q_block * k_block) * scale
             mask_n = j < k_seq_len
+
             if is_causal:
                 mask_n = mask_n & (j <= i)
-
-            tmp = tl.sum(q_block * k_block) * scale
-            tmp = tl.where(mask_n, tmp, -float("inf"))
+                tmp = tl.where(mask_n, tmp, -1e5)
+            else:
+                mask_off = batch_idx * stride_mask_b + i * stride_mask_i + j
+                mask_block = tl.load(
+                    mask_ptr + mask_off,
+                    mask=mask_n,
+                    other=tl.exp(-1e5),
+                )
+                tmp += mask_block
 
             m_pre = m
             m = max(m, tmp)
@@ -105,9 +117,21 @@ def flash_attention_kernel(
         )
 
 
-def flash_attention_forward_triton(q, k, v, is_causal=False):
+def flash_attention_forward_triton(q, k, v, is_causal=False, mask=None):
     assert q.dim() == k.dim() == v.dim(), "bad dim"
     assert k.size() == v.size(), "bad size"
+
+    if is_causal:
+        assert mask is None, "mask is not supported for causal attention"
+
+    if mask is not None:
+        mask = mask.to(q.dtype)
+        if mask.dim() == 4:
+            assert mask.size(1) == 1, "mask must have 1 head"
+        if mask.dim() == 3:
+            mask = mask.unsqueeze(1)
+        if mask.dtype == torch.bool:
+            mask = torch.where(mask, 0.0, -1e5).to(q.dtype)
 
     batch_size = q.size(0)
     q_head_num = q.size(1)
@@ -118,7 +142,9 @@ def flash_attention_forward_triton(q, k, v, is_causal=False):
     k_seq_len = k.size(2)
 
     if q_head_num != k_head_num:
-        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        assert (
+            q_head_num % k_head_num == 0
+        ), "q_head_num must be divisible by k_head_num"
         k = k.repeat_interleave(q_head_num // k_head_num, dim=1)
         v = v.repeat_interleave(q_head_num // k_head_num, dim=1)
 
@@ -128,6 +154,7 @@ def flash_attention_forward_triton(q, k, v, is_causal=False):
         q,
         k,
         v,
+        mask,
         out,
         q.stride(0),
         q.stride(2),
@@ -141,6 +168,9 @@ def flash_attention_forward_triton(q, k, v, is_causal=False):
         out.stride(0),
         out.stride(2),
         out.stride(1),
+        -1 if mask is None else mask.stride(0),
+        -1 if mask is None else mask.stride(2),
+        -1 if mask is None else mask.stride(3),
         q_seq_len,
         k_seq_len,
         batch_size * q_head_num * q_seq_len * head_dim,
@@ -159,6 +189,7 @@ def flash_attention_kernel_tile(
     q_ptr,
     k_ptr,
     v_ptr,
+    mask_ptr,
     out_ptr,
     stride_q_b: tl.int64,
     stride_q_s: tl.int64,
@@ -172,6 +203,9 @@ def flash_attention_kernel_tile(
     stride_o_b: tl.int64,
     stride_o_s: tl.int64,
     stride_o_h: tl.int64,
+    stride_mask_b: tl.int64,
+    stride_mask_i: tl.int64,
+    stride_mask_j: tl.int64,
     q_seq_len: tl.int64,
     k_seq_len: tl.int64,
     q_total_size: tl.int64,
@@ -208,7 +242,7 @@ def flash_attention_kernel_tile(
         other=0.0,
     )
 
-    m = tl.full((BLOCK_M,), -float("inf"), dtype=tl.float32)
+    m = tl.full((BLOCK_M,), -1e5, dtype=tl.float32)
     d = tl.zeros((BLOCK_M,), dtype=tl.float32)
     o = tl.zeros((BLOCK_M, head_dim), dtype=tl.float32)
 
@@ -237,14 +271,23 @@ def flash_attention_kernel_tile(
             other=0.0,
         )
 
+        s = tl.dot(q_block, tl.trans(k_block)) * scale
         mask_n = offs_n < k_seq_len
         if is_causal:
             mask_n = mask_n[None, :] & (offs_n[None, :] <= offs_m[:, None])
+            s = tl.where(mask_n, s, -1e5)
         else:
-            mask_n = mask_n[None, :]
-
-        s = tl.dot(q_block, tl.trans(k_block)) * scale
-        s = tl.where(mask_n, s, -float("inf"))
+            mask_off = (
+                batch_idx * stride_mask_b
+                + offs_m[:, None] * stride_mask_i
+                + offs_n[None, :] * stride_mask_j
+            )
+            mask_block = tl.load(
+                mask_ptr + mask_off,
+                mask=(offs_m[:, None] < q_seq_len) & (offs_n[None, :] < k_seq_len),
+                other=0.0,
+            )
+            s = s + mask_block
 
         m_ij = tl.maximum(m, tl.max(s, axis=1))
         p = tl.exp(s - m_ij[:, None])
@@ -271,8 +314,19 @@ def flash_attention_kernel_tile(
     )
 
 
-def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
+def flash_attention_tile_forward_triton(q, k, v, is_causal=False, mask=None):
     assert q.dim() == k.dim() == v.dim(), "bad dim"
+    if is_causal:
+        assert mask is None, "mask is not supported for causal attention"
+
+    if mask is not None:
+        mask = mask.to(q.dtype)
+        if mask.dim() == 4:
+            assert mask.size(1) == 1, "mask must have 1 head"
+        if mask.dim() == 3:
+            mask = mask.unsqueeze(1)
+        if mask.dtype == torch.bool:
+            mask = torch.where(mask, 0.0, -1e5).to(q.dtype)
 
     batch_size, q_head_num, q_seq_len, head_dim = q.size()
     k_head_num = k.size(1)
@@ -283,14 +337,19 @@ def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
     BLOCK_N = 32
 
     if q_head_num != k_head_num:
-        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        assert (
+            q_head_num % k_head_num == 0
+        ), "q_head_num must be divisible by k_head_num"
         k = k.repeat_interleave(q_head_num // k_head_num, dim=1)
         v = v.repeat_interleave(q_head_num // k_head_num, dim=1)
 
-    flash_attention_kernel_tile[(batch_size * q_head_num, triton.cdiv(q_seq_len, BLOCK_M))](
+    flash_attention_kernel_tile[
+        (batch_size * q_head_num, triton.cdiv(q_seq_len, BLOCK_M))
+    ](
         q,
         k,
         v,
+        mask,
         out,
         q.stride(0),
         q.stride(2),
@@ -304,6 +363,9 @@ def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
         out.stride(0),
         out.stride(2),
         out.stride(1),
+        -1 if mask is None else mask.stride(0),
+        -1 if mask is None else mask.stride(2),
+        -1 if mask is None else mask.stride(3),
         q_seq_len,
         k_seq_len,
         batch_size * q_head_num * q_seq_len * head_dim,
@@ -320,7 +382,9 @@ def flash_attention_tile_forward_triton(q, k, v, is_causal=False):
     return out
 
 
-def flash_attention_forward_cpu(q_ptr, k_ptr, v_ptr, out_ptr, is_causal=False):
+def flash_attention_forward_cpu(
+    q_ptr, k_ptr, v_ptr, out_ptr, is_causal=False, mask=None
+):
     """
     demo for flash attention forward impl cpu version
     not run, very slow, just for demo
@@ -328,35 +392,50 @@ def flash_attention_forward_cpu(q_ptr, k_ptr, v_ptr, out_ptr, is_causal=False):
     batch_size, q_head_num, q_seq_len, head_dim = q_ptr.shape
     k_head_num = k_ptr.size(1)
 
+    if is_causal:
+        assert mask is None, "mask is not supported for causal attention"
+
+    if mask is not None:
+        mask = mask.to(q_ptr.dtype)
+        if mask.dim() == 3:
+            mask = mask.unsqueeze(1)
+        if mask.dim() == 4:
+            assert mask.size(1) == 1, "mask must have 1 head"
+        if mask.dtype == torch.bool:
+            mask = torch.where(mask, 0.0, -1e5).to(q_ptr.dtype)
+
     if q_head_num != k_head_num:
         v_head_num = v_ptr.size(1)
-        assert q_head_num % k_head_num == 0, "q_head_num must be divisible by k_head_num"
+        assert (
+            q_head_num % k_head_num == 0
+        ), "q_head_num must be divisible by k_head_num"
         k_ptr = k_ptr.repeat_interleave(q_head_num // k_head_num, dim=1)
         v_ptr = v_ptr.repeat_interleave(q_head_num // v_head_num, dim=1)
 
     k_seq_len = k_ptr.size(2)
-
     scale = head_dim ** (-0.5)
-
     k_ptr = k_ptr.transpose(2, 3)
 
     for b in range(batch_size):
         for h in range(q_head_num):
             for i in range(q_seq_len):
-                m = float("-inf")
-                d = 0
+                m = torch.tensor(-1e5, device=q_ptr.device, dtype=q_ptr.dtype)
+                d = torch.tensor(0.0, device=q_ptr.device, dtype=q_ptr.dtype)
                 o = torch.zeros(head_dim, device=q_ptr.device, dtype=q_ptr.dtype)
                 for j in range(k_seq_len):
-                    if is_causal and j > i:
-                        continue
 
                     tmp = 0
                     for k in range(head_dim):
                         tmp += q_ptr[b, h, i, k] * k_ptr[b, h, k, j]
                     tmp *= scale
 
+                    if is_causal and j > i:
+                        continue
+                    elif mask is not None:
+                        tmp += mask[b, 0, i, j]
+
                     m_pre = m
-                    m = max(m, tmp)
+                    m = torch.maximum(m, tmp)
                     d_pre = d
                     d = d_pre * torch.exp(m_pre - m) + torch.exp(tmp - m)
                     o = (

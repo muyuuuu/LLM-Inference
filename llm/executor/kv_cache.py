@@ -69,7 +69,7 @@ class BatchKVCache:
         )
         masks = torch.full(
             (batch_size, mask_length, max_seq_len),
-            -float("inf"),
+            -1e5,
             dtype=k_tensor.dtype,
             device=k_tensor.device,
         )

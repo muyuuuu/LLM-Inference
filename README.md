@@ -24,18 +24,18 @@ triton                    3.2.0
 
 ## QWen3 实现与本地部署
 
-| 任务                                                     | 测试命令                                                                    |
-| -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| ✅ Task 1: 实现 `scaled_dot_product_attention`            | `python -m unittest llm.test.attention_test.TestScaleDotAttention`          |
-| ✅ Task 2: 实现 `MultiHeadAttention`                      | `python -m unittest llm.test.attention_test.TestMultiHeadAttention`         |
-| ✅ Task 3: 实现 `RoPE` 旋转位置编码                       | `python -m unittest llm.test.rope_test`                                     |
-| ✅ Task 4: 实现 `RMSNorm` 标准化                          | `python -m unittest llm.test.norm_test`                                     |
-| ✅ Task 5: 实现千问的 `MLP`                               | `python -m unittest llm.test.mlp_test`                                      |
-| ✅ Task 6.1: `scaled_dot_product_attention` 添加 GQA 支持 | `python -m unittest llm.test.attention_test.TestScaleDotAttention`          |
-| ✅ Task 6.2: `MultiHeadAttention` 添加 GQA 支持           | `python -m unittest llm.test.attention_test.TestGroupedMultiHeadAttention ` |
-| ✅ Task 7: 实现 `tied embedding`                          | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`           |
-| ✅ Task 8: 实现 `Qwen3 TransformerBlock`                  | 暂时没想到测试方法                                                          |
-| ✅ Task 9: 加载 Qwen3-4B-Instruct-2507 模型，简单推理     | `python -m llm.executor.run_model` 执行推理                                 |
+|   #   | 任务                                           | 测试命令                                                                   |
+| :---: | ---------------------------------------------- | -------------------------------------------------------------------------- |
+|   1   | ✅ 实现 `scaled_dot_product_attention`          | `python -m unittest llm.test.attention_test.TestScaleDotAttention`         |
+|   2   | ✅ 实现 `MultiHeadAttention`                    | `python -m unittest llm.test.attention_test.TestMultiHeadAttention`        |
+|   3   | ✅ 实现 `RoPE` 旋转位置编码                     | `python -m unittest llm.test.rope_test`                                    |
+|   4   | ✅ 实现 `RMSNorm` 标准化                        | `python -m unittest llm.test.norm_test`                                    |
+|   5   | ✅ 实现千问的 `MLP`                             | `python -m unittest llm.test.mlp_test`                                     |
+|  6.1  | ✅ `scaled_dot_product_attention` 添加 GQA 支持 | `python -m unittest llm.test.attention_test.TestScaleDotAttention`         |
+|  6.2  | ✅ `MultiHeadAttention` 添加 GQA 支持           | `python -m unittest llm.test.attention_test.TestGroupedMultiHeadAttention` |
+|   7   | ✅ 实现 `tied embedding`                        | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`          |
+|   8   | ✅ 实现 `Qwen3 TransformerBlock`                | —                                                                          |
+|   9   | ✅ 加载 Qwen3 模型，简单推理                    | `python -m llm.executor.run_model`                                         |
 
 
 ## 工程优化
@@ -46,26 +46,19 @@ triton                    3.2.0
 |  1.2  | ✅ 解决重复生成问题，实现 `TopN` 采样                | `python -m llm.executor.run_model --topp 0.7`                                                   |
 |   2   | ✅ 实现 PD 分离与 KV Cache                           | `python -m llm.executor.run_model --kv_cache 1`                                                 |
 |   3   | ✅ 学习 CUDA 或 triton(建议)，实现 FlashAttention V1 | `python -m unittest llm.test.flash_attn_test`，`python -m llm.executor.run_model --use_flash 1` |
+|   4   | ✅ 实现连续批处理，模拟 chunk prefill                | `python -m llm.executor.continue_batch`                                                         |
+|   5   | ✅ 实现 PageAttention                                | `python -m llm.executor.continue_batch --use_page 1`                                            |
 
-
-- page attention
-- continuous batching
-- load cuda graph
-
-## 服务设计
-
-- scheduler
 
 # 结语
 
 大模型推理到最终落地还有艰难的一公里：
 
 - 不同芯片内存布局不同，NCHW？NHWC？
-- 子图匹配与计算图融合
 - 多卡推理，多卡的通信与内存管理
 - int4 量化
 
-芯片部署这是个不折不扣的糙活，难以想象各个厂的芯片会有什么大坑，暂时没有兴趣；子图匹配与计算图融合有时间再看；模型量化暂时没兴趣；工作相关，后面会去看多卡训练相关的项目。
+芯片部署这是个不折不扣的糙活，难以想象各个厂的芯片会有什么大坑，暂时没有兴趣；模型量化暂时没兴趣；工作相关，后面会去看多卡相关的项目。
 
 此外，大模型对话还会涉及很多[优化技术](https://www.bilibili.com/video/BV1Bm6bB5EJ3/?spm_id_from=333.337.search-card.all.click&vd_source=08fc039ce87a61f2dd6954658b5ae2b5)，但这些优化技术更侧重大模型的服务和 Agent，更像大模型时代后端工程师的工作内容
 
@@ -92,3 +85,6 @@ RAG 涉及数据库和向量检索，Memory 的历史记忆涉及摘要生成，
 - [看图学 KV Cache](https://zhuanlan.zhihu.com/p/662498827)
 - [triton 入门](https://zhuanlan.zhihu.com/p/684473453)
 - [FlashAttention 公式推导](https://courses.cs.washington.edu/courses/cse599m/23sp/notes/flashattn.pdf)
+- [chunk prefill 原理](https://zhuanlan.zhihu.com/p/14689463165)
+- [连续批处理](https://zhuanlan.zhihu.com/p/719610083)
+- [PageAttention 原理](https://zhuanlan.zhihu.com/p/691038809)

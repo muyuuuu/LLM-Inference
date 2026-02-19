@@ -1,6 +1,7 @@
+import argparse
 import torch
 from dataclasses import dataclass
-from llm.executor.kv_cache import BatchKVCache, EasyKVCache
+from llm.executor.kv_cache import BatchKVCache, EasyKVCache, PagedBatchKVCache
 from llm.executor.load_model import Qwen3Loader
 
 
@@ -149,7 +150,7 @@ class SingleRequest:
 
 
 class Executor:
-    def __init__(self):
+    def __init__(self, use_page: bool = False):
         self._promptes = [
             "黄金还会涨吗？简短回答",
             "千问是什么？简短回答",
@@ -165,7 +166,9 @@ class Executor:
         filter = topk_func
 
         loader = Qwen3Loader()
-        model, _, tokenizer = loader.convert_official_model(use_flash_attention=True)
+        model, qwen3_config, tokenizer = loader.convert_official_model(
+            use_flash_attention=True
+        )
 
         self.model_runner = ModelRunner(
             model=model,
@@ -176,13 +179,28 @@ class Executor:
             filter=filter,
         )
 
-        self._batch_kv_cache = [
-            BatchKVCache(
-                max_activate_requests=self.max_request_size,
-                max_seq_len=self.max_seq_len,
-            )
-            for _ in range(model.config.num_layers)
-        ]
+        if use_page:
+            num_blocks = 400
+            self._batch_kv_cache = [
+                PagedBatchKVCache(
+                    max_activate_requests=self.max_request_size,
+                    max_seq_len=self.max_seq_len,
+                    num_blocks=num_blocks,
+                    num_requests=self.max_request_size,
+                    num_heads=qwen3_config.kv_num_head,
+                    head_dim=qwen3_config.head_dim,
+                    block_size=4,
+                )
+                for _ in range(model.config.num_layers)
+            ]
+        else:
+            self._batch_kv_cache = [
+                BatchKVCache(
+                    max_activate_requests=self.max_request_size,
+                    max_seq_len=self.max_seq_len,
+                )
+                for _ in range(model.config.num_layers)
+            ]
 
     def run(self):
         all_slots_done = [RequestStatus.is_prompt] * self.max_request_size
@@ -264,5 +282,14 @@ class Executor:
 
 
 if __name__ == "__main__":
-    executor = Executor()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--use_page",
+        type=bool,
+        default=False,
+        help="use paged batch kv cache",
+    )
+
+    args = parser.parse_args()
+    executor = Executor(use_page=args.use_page)
     executor.run()

@@ -39,18 +39,18 @@
 
 ## 📐 Qwen3 实现与本地部署
 
-| #   | 任务                             | 测试命令                                                                   |
-| --- | -------------------------------- | -------------------------------------------------------------------------- |
-| 1   | ✅ `scaled_dot_product_attention` | `python -m unittest llm.test.attention_test.TestScaleDotAttention`         |
-| 2   | ✅ `MultiHeadAttention`           | `python -m unittest llm.test.attention_test.TestMultiHeadAttention`        |
-| 3   | ✅ RoPE 旋转位置编码              | `python -m unittest llm.test.rope_test`                                    |
-| 4   | ✅ RMSNorm                        | `python -m unittest llm.test.norm_test`                                    |
-| 5   | ✅ 千问 MLP                       | `python -m unittest llm.test.mlp_test`                                     |
-| 6.1 | ✅ Attention 添加 GQA             | `python -m unittest llm.test.attention_test.TestScaleDotAttention`         |
-| 6.2 | ✅ MultiHeadAttention GQA         | `python -m unittest llm.test.attention_test.TestGroupedMultiHeadAttention` |
-| 7   | ✅ Tied Embedding                 | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`          |
-| 8   | ✅ Qwen3 TransformerBlock         | —                                                                          |
-| 9   | ✅ 加载 Qwen3 并简单推理          | `python -m llm.executor.run_model`                                         |
+| #   | 任务                           | 测试命令                                                                   |
+| --- | ------------------------------ | -------------------------------------------------------------------------- |
+| 1   | ✅ scaled_dot_product_attention | `python -m unittest llm.test.attention_test.TestScaleDotAttention`         |
+| 2   | ✅ MultiHeadAttention           | `python -m unittest llm.test.attention_test.TestMultiHeadAttention`        |
+| 3   | ✅ RoPE 旋转位置编码            | `python -m unittest llm.test.rope_test`                                    |
+| 4   | ✅ RMSNorm                      | `python -m unittest llm.test.norm_test`                                    |
+| 5   | ✅ 千问 MLP                     | `python -m unittest llm.test.mlp_test`                                     |
+| 6.1 | ✅ Attention 添加 GQA           | `python -m unittest llm.test.attention_test.TestScaleDotAttention`         |
+| 6.2 | ✅ MultiHeadAttention GQA       | `python -m unittest llm.test.attention_test.TestGroupedMultiHeadAttention` |
+| 7   | ✅ Tied Embedding               | `python -m unittest llm.test.tie_embedding_test.TestTieEmbedding`          |
+| 8   | ✅ Qwen3 TransformerBlock       | —                                                                          |
+| 9   | ✅ 加载 Qwen3 并简单推理        | `python -m llm.executor.run_model`                                         |
 
 ---
 
@@ -63,7 +63,7 @@
 | 2   | ✅ Prefill-Decode 分离与 KV Cache | `python -m llm.executor.run_model --kv_cache 1`                                                  |
 | 3   | ✅ FlashAttention V1 (Triton)     | `python -m unittest llm.test.flash_attn_test` · `python -m llm.executor.run_model --use_flash 1` |
 | 4   | ✅ 连续批处理与 Chunk Prefill     | `python -m llm.executor.continue_batch`                                                          |
-| 5   | ✅ PagedAttention                 | `python -m llm.executor.continue_batch --use_page 1`                                             |
+| 5   | ✅ PageAttention                  | `python -m llm.executor.continue_batch --use_page 1`                                             |
 
 ---
 

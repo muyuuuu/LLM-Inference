@@ -13,7 +13,7 @@
 基于对大模型推理原理的兴趣，本项目跟随 [tiny-llm](https://skyzh.github.io/tiny-llm/week1-07-sampling-prepare.html) 课程，将苹果芯片相关实现适配到 Nvidia GPU（RTX 4070），完成 **Qwen3-4B-Instruct-2507** 的本地部署与推理。显存不足时可选用 **Qwen3-0.5B**，重点在于学习与复现技术路线。
 
 <div align="center">
-  <img src="./assert/demo.png" width="640" alt="demo">
+  <img src="./assets/demo.png" width="640" alt="demo">
 </div>
 
 ---
